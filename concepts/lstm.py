@@ -38,6 +38,7 @@ feed = build_dataset(dictionary, data)
 print(feed)
 
 
+sess = tf.InteractiveSession()
 
 # set up network variables
 vocab_size = len(dictionary)
@@ -50,6 +51,7 @@ weights = tf.Variable(tf.random_normal([n_hidden, vocab_size]))
 biases = tf.Variable(tf.random_normal([vocab_size]))
 
 x = tf.placeholder(tf.int32, [None, n_input])
+y_ = tf.placeholder(tf.int32, [None, 1])
 
 # 1-layer LSTM with n-hidden units
 lstm = rnn.BasicLSTMCell(n_hidden)
@@ -59,7 +61,20 @@ lstm = rnn.BasicLSTMCell(n_hidden)
 #initial_state = state = tf.zeros([batch_size, lstm.state_size[1]])
 initial_state = state = tf.zeros([batch_size, n_hidden])
 
+#probabilities = []
 
+output, state = lstm(x, state)
+
+logits = tf.matmul(output, weights) + biases
+#y = tf.nn.softmax(logits)
+#probabilities.append(tf.nn.softmax(logits))
+loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=logits))
+
+train_op = tf.train.AdamOptimizer(0.01).minimize(loss)
+
+for entry in feed:
+    print("Running")
+    sess.run([ ], feed_dict={x: entry[0], y_: entry[1]})
 
 
 
@@ -76,6 +91,8 @@ initial_state = state = tf.zeros([batch_size, n_hidden])
 
 # there are n_input outputs but we only want the last output
 #rnn_out = tf.matmul(outputs[-1], weights) + biases
+
+
 
 
 print("Done")
