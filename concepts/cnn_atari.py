@@ -48,6 +48,13 @@ class Agent:
             p = brain.predict_p(state) # NOTE: don't actually think p is p here?
             return np.random.choice(NUM_ACTIONS, p=p)
 
+    def train(self, state, action, reward, state):
+        action_cats = np.zeros(NUM_ACTIONS) # TODO: what is cats???
+        action_cats[a] = 1
+
+        # store experience samples
+        self.memory.append((state, action_cats, reward, state_))
+
 
 class Brain:
     def __init__():
