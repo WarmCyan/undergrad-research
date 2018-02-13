@@ -1,98 +1,65 @@
+# https://jasdeep06.github.io/posts/Understanding-LSTM-in-Tensorflow-MNIST/
+
 import tensorflow as tf
 from tensorflow.contrib import rnn
 
-import collections
 
-# function to build a dataset (returns a unique id associated with each word)
-# this particular example mapping is built by frequency of each word. (So the most common word is id 0, next most common is 1, etc)
-def build_dictionary(words):
-    count = collections.Counter(words).most_common()
-    dictionary = dict()
-    for word, _ in count:
-        dictionary[word] = len(dictionary)
-    reverse_dictionary = dict(zip(dictionary.values(), dictionary.keys()))
-    return dictionary, reverse_dictionary
+# import mnist dataset
+from tensorflow.examples.tutorials.mnist import input_data
+mnist=input_data.read_data_sets("/tmp/data/", one_hot=True)
 
-
-def build_dataset(dictionary, data):
-    entries = []
-    for i in range(0, len(data)-3):
-        entry = []
-        entry.append([])
-        entry[0].append(dictionary[data[i]])
-        entry[0].append(dictionary[data[i+1]])
-        entry[0].append(dictionary[data[i+2]])
-        entry.append([])
-        entry[1].append(dictionary[data[i+3]])
-
-        entries.append(entry)
-    return entries 
+time_steps = 28 # unrolled through 28 steps
+num_units = 128 # 128 lstm units
+n_input = 28 # 28 pixels
+learning_rate = 0.001
+n_classes = 10 # prediction class count
+batch_size = 128
 
 
-# build dataset from one of Aesop's short stoies
-data = "long ago , the mice had a general council to consider what measures they could take to outwit their common enemy , the cat . some said this , and some said that but at last a young mouse got up and said he had a proposal to make , which he thought would meet the case . you will all agree , said he , that our chief danger consists in the sly and treacherous manner in which the enemy approaches us . now , if we could receive some signal of her approach , we could easily escape from her . i venture , therefore , to propose that a small bell be procured , and attached by a ribbon round the neck of the cat . by this means we should always know when she was about , and could easily retire while she was in the neighbourhood . this proposal met with general applause , until an old mouse got up and said that is all very well , but who is to bell the cat ? the mice looked at one another and nobody spoke . then the old mouse said it is easy to propose impossible remedies ."
-data = data.split(' ')
-
-dictionary, reverse_dictionary = build_dictionary(data)
-feed = build_dataset(dictionary, data)
-print(feed)
+# placeholders (input/target)
+x = tf.placeholder("float", [None, time_steps, n_input])
+y = tf.placeholder("float", [None, n_classes])
 
 
-sess = tf.InteractiveSession()
+# variables
+weights = tf.Variable(tf.random_normal([num_units, n_classes]))
+biases = tf.Variable(tf.random_normal([n_classes]))
 
-# set up network variables
-vocab_size = len(dictionary)
+# TODO: explore below step
+#processing the input tensor from [batch_size,n_steps,n_input] to "time_steps" number of [batch_size,n_input] tensors
+input = tf.unstack(x, time_steps, 1)
 
-n_input = 3 # TODO: grab 3 words at a time as input?
-n_hidden = 512 # number of hidden units in the RNN cell
-batch_size = 1
+# definte network
+lstm_layer = rnn.BasicLSTMCell(num_units, forget_bias=1)
+outputs, _ = rnn.static_rnn(lstm_layer, input, dtype="float32")
 
-weights = tf.Variable(tf.random_normal([n_hidden, vocab_size]))
-biases = tf.Variable(tf.random_normal([vocab_size]))
+# get output at last time step for prediction
+pred = tf.matmul(outputs[-1], weights) + biases
 
-x = tf.placeholder(tf.int32, [None, n_input])
-y_ = tf.placeholder(tf.int32, [None, 1])
+# define loss function
+loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=pred, labels=y))
+train_op = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
-# 1-layer LSTM with n-hidden units
-lstm = rnn.BasicLSTMCell(n_hidden)
+correct_prediction = tf.equal(tf.argmax(pred,1), tf.argmax(y,1))
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
-#currentState = tf.zeros(lstm.state_size)
-#hiddenState = tf.zeros(batch_size, lstm.state_size)
-#initial_state = state = tf.zeros([batch_size, lstm.state_size[1]])
-initial_state = state = tf.zeros([batch_size, n_hidden])
+init = tf.global_variables_initializer()
+with tf.Session() as sess:
+    sess.run(init)
+    iter = 1
+    while iter < 800:
+        batch_x, batch_y = mnist.train.next_batch(batch_size=batch_size)
+        batch_x = batch_x.reshape((batch_size, time_steps, n_input)) # TODO: what does this do??
 
-#probabilities = []
+        sess.run(train_op, feed_dict={x: batch_x, y: batch_y})
 
-output, state = lstm(x, state)
+        # log every 10th run
+        if iter % 10 == 0:
+            acc = sess.run(accuracy,feed_dict={x:batch_x, y:batch_y})
+            los = sess.run(loss,feed_dict={x:batch_x, y:batch_y})
+            print("For iter ", iter)
+            print("Accuracy ", acc)
+            print("Loss ", los)
+            print("__________________")
 
-logits = tf.matmul(output, weights) + biases
-#y = tf.nn.softmax(logits)
-#probabilities.append(tf.nn.softmax(logits))
-loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=logits))
-
-train_op = tf.train.AdamOptimizer(0.01).minimize(loss)
-
-for entry in feed:
-    print("Running")
-    sess.run([ ], feed_dict={x: entry[0], y_: entry[1]})
-
-
-
-
-# reshape to [1, n_input]
-#x = tf.reshape(x, [-1, n_input]) # TODO: why -1? What does that do?
-
-# Generate an n_input-element sequence of inputs
-# (eg. [had] [a] [general] -> [20] [6] [33])
-#x = tf.split(x,n_input,1)
-
-# generate prediction
-#outputs, states = rnn.static_rnn(lstm, x, dtype=tf.float32)
-
-# there are n_input outputs but we only want the last output
-#rnn_out = tf.matmul(outputs[-1], weights) + biases
-
-
-
-
-print("Done")
+        iter=iter+1
