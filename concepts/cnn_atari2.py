@@ -25,14 +25,29 @@ class Agent:
         self.sess = tf.Session()
 
 
+    def buildGraph():
+
         self.input = tf.placeholder(tf.float32, shape=(84,84,4)) # TODO: pretty sure that shape isn't right
 
-        # 32 filters
-        # TODO: kernel size (specified 8x8) is 8?
-        # stride of 4
+        # convolutional layers
+        
+
+        # TODO: need weights and biases between each layer right?? Or is this automatically handled?
+        # NOTE: I assume yes, tf docs mentione "trainable" variable which adds variables to graph?
+        
+        # 32 filters, kernel size of 8, stride of 4
         self.conv1 = tf.layers.conv2d(self.input, 32, 8, 4, activation=tf.nn.relu)
         
+        # 64 filters, kernel size of 4, stride of 2
         self.conv2 = tf.layers.conv2d(self.conv1, 64, 4, 2, activation=tf.nn.relu)
         
+        # 64 filters, kernel size of 3, stride of 1
         self.conv3 = tf.layers.conv2d(self.conv2, 64, 3, 1, activation=tf.nn.relu)
 
+        # NOTE: think I might need to flatten output of conv3?
+
+        # fully conected layer
+        fc_w = tf.Variable(tf.random_normal([64, 512]) # fully connected weights TODO: no idea if size is right
+        fc_b # fully connected biases
+        
+        # final 
