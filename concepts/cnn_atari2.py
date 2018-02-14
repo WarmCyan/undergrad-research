@@ -32,5 +32,7 @@ class Agent:
         # stride of 4
         self.conv1 = tf.layers.conv2d(self.input, 32, 8, 4, activation=tf.nn.relu)
         
-        pass
+        self.conv2 = tf.layers.conv2d(self.conv1, 64, 4, 2, activation=tf.nn.relu)
+        
+        self.conv3 = tf.layers.conv2d(self.conv2, 64, 3, 1, activation=tf.nn.relu)
 
