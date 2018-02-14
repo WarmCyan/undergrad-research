@@ -5,3 +5,7 @@ Based on [FeUdal Networks for Hierarchical Reinforcement Learning](https://arxiv
 
 Using OpenAI's [gym](https://github.com/openai/gym) (had to install swig from
 package manager)
+
+Using [tensorflow](https://www.tensorflow.org/)
+
+Using [scikit-image](http://scikit-image.org/)
