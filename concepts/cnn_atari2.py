@@ -47,12 +47,15 @@ class Agent:
 
         # NOTE: think I might need to flatten output of conv3?
 
+        self.conv3_out = tf.reshape([-1])
+
         # fully conected layer
+        self.fc_w = tf.Variable(tf.random_normal([64, 512]), name='fc_weights') # fully connected weights TODO: no idea if size is right
         #self.fc_w = tf.Variable(tf.random_normal([64, 512])) # fully connected weights TODO: no idea if size is right
-        #self.fc_b = tf.Variable(tf.random_normal(512)) # fully connected biases
+        self.fc_b = tf.Variable(tf.random_normal([512]), name='fc_biases') # fully connected biases
 
         #fc_out = tf.matmul(self.conv3, fc_w) + fc_b
-        #self.fc_out = tf.nn.relu_layer(self.conv3, self.fc_w, self.fc_b)
+        self.fc_out = tf.nn.relu_layer(self.conv3, self.fc_w, self.fc_b)
 
         #  
         #self.out_w = tf.Variable(tf.random_normal([512, 6]))
