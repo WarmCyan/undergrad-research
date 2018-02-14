@@ -11,3 +11,5 @@ chromium https://github.com/openai/gym &>/dev/null &
 chromium https://gym.openai.com/docs/ &>/dev/null &
 
 chromium https://www.tensorflow.org/api_docs/python/ &>/dev/null &
+
+chromium http://localhost:6006 &>/dev/null &
