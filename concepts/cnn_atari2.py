@@ -115,16 +115,40 @@ state = e.getInitialState()
 #a.sess.run([a.output, a.summary_op], feed_dict={a.input: state})
 #result, summary = a.sess.run([a.output, a.summary_op], feed_dict={a.input: state})
 #result = a.sess.run([a.output], feed_dict={a.input: state})
-result = a.act(state)
+#result = a.act(state)
 #action = np.argmax(result)
-print(result)
-print(action)
+#print(result)
+#print(action)
+
+rewards = []
 
 done = False
+frameNum = 0
 while not done:
+    
+    frameNum += 1
+    #if frameNum % 4 != 0:
+        #newstate, reward, done = e.act(0)
+    #else:
+        #action = a.act(state)
+        #if action == None: action = e.env.action_space.sample()
+        #newstate, reward, done = e.act(action) 
+
+        #rewards.append(reward)
+        ##print(reward)
+        ##action = np.argmax(a.act(newstate))
+
+        
+    action = a.act(state)
+    if action == None: action = e.env.action_space.sample()
     newstate, reward, done = e.act(action) 
-    #action = np.argmax(a.act(newstate))
+
+    rewards.append(reward)
     e.env.render()
+    state = newstate
+
+avg = np.average(rewards)
+#print(avg)
 
 #a.train_writer.add_summary(summaries)
 
