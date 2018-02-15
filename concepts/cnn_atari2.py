@@ -32,7 +32,7 @@ class Environment:
 
     def getInitialState(self):
         frame = self.preprocessFrame(self.env.reset())
-        self.frameSeq.append(frame)
+        self.frameSeq.append(frame) # TODO: make this based off of self.seqsize
         self.frameSeq.append(frame)
         self.frameSeq.append(frame)
         self.frameSeq.append(frame)
@@ -79,9 +79,9 @@ class Agent:
 
 
     def buildGraph(self):
-        self.input = tf.placeholder(tf.float32, shape=(1, 84,84,4)) # TODO: pretty sure that shape isn't right
-        #self.input = tf.placeholder(tf.float32, shape=(1,84,84,1)) # TODO: pretty sure that shape isn't right
 
+        ## -- Q NETWORK --
+        self.input = tf.placeholder(tf.float32, shape=(1, 84,84,4)) # TODO: pretty sure that shape isn't right
         # convolutional layers
 
         # 32 filters, kernel size of 8, stride of 4
@@ -99,7 +99,6 @@ class Agent:
         with tf.name_scope('fully_connected'):
             self.fc_w = tf.Variable(tf.random_normal([3136, 512]), name='fc_weights') 
             self.fc_b = tf.Variable(tf.random_normal([512]), name='fc_biases') # fully connected biases
-            #self.output = self.conv3_out + 1
 
             self.fc_out = tf.nn.relu_layer(self.conv3_out, self.fc_w, self.fc_b, name='fc_out')
 
@@ -110,18 +109,55 @@ class Agent:
 
             self.output = tf.matmul(self.fc_out, self.out_w) + self.out_b
 
-        #self.summary_op = tf.summary.tensor_summary("output", self.output)
 
-        #for i in range(self.output.get_shape()[0]):
-        #    for j in range(self.output.get_shape()[1]):
-        #        tf.summary.scalar("output_" + str(i) + "_" + str(j), self.output[i, j])
+        ## -- Q-hat NETWORK -- (target network)
+            
+        self.t_input = tf.placeholder(tf.float32, shape=(1, 84,84,4)) # TODO: pretty sure that shape isn't right
+        # convolutional layers
+
+        # 32 filters, kernel size of 8, stride of 4
+        self.t_conv1 = tf.layers.conv2d(self.t_input, 32, 8, 4, activation=tf.nn.relu, name='t_conv1')
+        
+        # 64 filters, kernel size of 4, stride of 2
+        self.t_conv2 = tf.layers.conv2d(self.t_conv1, 64, 4, 2, activation=tf.nn.relu, name='t_conv2')
+        
+        # 64 filters, kernel size of 3, stride of 1
+        self.t_conv3 = tf.layers.conv2d(self.t_conv2, 64, 3, 1, activation=tf.nn.relu, name='t_conv3')
+        self.t_conv3_out = tf.reshape(self.t_conv3, [-1, 3136], name='t_conv3_flatten')
+
+
+        # fully conected layer
+        with tf.name_scope('t_fully_connected'):
+            self.t_fc_w = tf.Variable(tf.random_normal([3136, 512]), name='t_fc_weights') 
+            self.t_fc_b = tf.Variable(tf.random_normal([512]), name='t_fc_biases') # fully connected biases
+
+            self.t_fc_out = tf.nn.relu_layer(self.t_conv3_out, self.t_fc_w, self.t_fc_b, name='t_fc_out')
+            
+
+        # output layer (for space invaders, 6 possible outputs)
+        with tf.name_scope('t_output'):
+            self.t_out_w = tf.Variable(tf.random_normal([512, 6]), name='t_out_weights')
+            self.t_out_b = tf.Variable(tf.random_normal([6]), name='t_out_biases')
+
+            self.t_output = tf.matmul(self.t_fc_out, self.t_out_w) + self.t_out_b
+            
+
+
+        ## -- RESET OPERATIONS --
+        with tf.name_scope('reset'):
+            #self.reset_conv3 = tf.assign(self.t_conv3, self.conv3)
+            self.reset_fc_w = tf.assign(self.t_fc_w, self.fc_w)
+            self.reset_fc_b = tf.assign(self.t_fc_b, self.fc_b)
+            self.reset_out_w = tf.assign(self.t_out_w, self.out_w)
+            self.reset_out_b = tf.assign(self.t_out_b, self.out_b)
+            
 
         self.merged_summaries = tf.summary.merge_all()
         self.sess.run(tf.global_variables_initializer())
+        self.sess.run([self.reset_fc_w, self.reset_fc_b, self.reset_out_w, self.reset_out_b])
         self.train_writer = tf.summary.FileWriter('../tensorboard_data/cnn_atari2' , self.sess.graph)
         self.train_writer.add_graph(self.sess.graph)
-        #self.train_writer.add_summary(self.merged_summaries)
-        #self.train_writer.add_summary(self.sess.run(summary_op), 1))
+
 
     # if none is returned, take random action
     def act(self, state):
