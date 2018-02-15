@@ -6,6 +6,12 @@ from skimage.transform import resize
 
 
 # https://github.com/aymericdamien/TensorFlow-Examples/blob/master/examples/3_NeuralNetworks/convolutional_network.py 
+# https://github.com/devsisters/DQN-tensorflow/tree/master/dqn 
+# http://cs231n.github.io/convolutional-networks/#conv 
+
+
+# https://ai.intel.com/demystifying-deep-reinforcement-learning/ 
+# https://danieltakeshi.github.io/2016/12/01/going-deeper-into-reinforcement-learning-understanding-dqn/ 
 
 
 # create an environment
@@ -47,21 +53,23 @@ class Agent:
 
         # NOTE: think I might need to flatten output of conv3?
 
-        self.conv3_out = tf.reshape([-1])
+        self.conv3_out = tf.reshape(self.conv3, [-1, 3136], name='conv3_flatten')
+
 
         # fully conected layer
-        self.fc_w = tf.Variable(tf.random_normal([64, 512]), name='fc_weights') # fully connected weights TODO: no idea if size is right
-        #self.fc_w = tf.Variable(tf.random_normal([64, 512])) # fully connected weights TODO: no idea if size is right
-        self.fc_b = tf.Variable(tf.random_normal([512]), name='fc_biases') # fully connected biases
+        with tf.name_scope('fully_connected'):
+            self.fc_w = tf.Variable(tf.random_normal([3136, 512]), name='fc_weights') 
+            self.fc_b = tf.Variable(tf.random_normal([512]), name='fc_biases') # fully connected biases
+            #self.output = self.conv3_out + 1
 
-        #fc_out = tf.matmul(self.conv3, fc_w) + fc_b
-        self.fc_out = tf.nn.relu_layer(self.conv3, self.fc_w, self.fc_b)
+            self.fc_out = tf.nn.relu_layer(self.conv3_out, self.fc_w, self.fc_b, name='fc_out')
 
-        #  
-        #self.out_w = tf.Variable(tf.random_normal([512, 6]))
-        #self.out_b = tf.Variable(tf.random_normal(6))
+        # output layer 
+        with tf.name_scope('output'):
+            self.out_w = tf.Variable(tf.random_normal([512, 6]), name='out_weights')
+            self.out_b = tf.Variable(tf.random_normal([6]), name='out_biases')
 
-        #self.choice = tf.matmul(self.fc_out, self.out_w) + self.out_b
+            self.output = tf.matmul(self.fc_out, self.out_w) + self.out_b
         
         
         # NOTE: 6 possible outputs for space invaders
@@ -79,3 +87,7 @@ class Agent:
 a = Agent()
 a.buildGraph()
 print("done")
+
+e = Environment()
+frame = e.preprocessFrame(e.env.reset())
+
