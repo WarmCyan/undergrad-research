@@ -48,6 +48,7 @@ class Agent:
     def __init__(self):
         self.sess = tf.Session()
         self.epsilon = 1.0
+        #self.epsilon = 0.1
         print("agent initialized")
 
 
@@ -98,12 +99,13 @@ class Agent:
 
     # if none is returned, take random action
     def act(self, frameInput):
+        action = None
+        
         exploreOrNo = random.uniform(0,1)
-        if exploreOrNo < self.epsilon: return None
-        else: return np.argmax(self.sess.run([self.output], feed_dict={self.input: frameInput}))
-            
-        #result = self.sess.run([self.output], feed_dict={self.input: frameInput})
-        #return result
+        if exploreOrNo > self.epsilon: action = np.argmax(self.sess.run([self.output], feed_dict={self.input: frameInput}))
+        if self.epsilon > .1: self.epsilon -= .000009
+
+        return action
 
 a = Agent()
 a.buildGraph()
