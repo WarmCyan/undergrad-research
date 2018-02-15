@@ -116,7 +116,7 @@ state = e.getInitialState()
 #result, summary = a.sess.run([a.output, a.summary_op], feed_dict={a.input: state})
 #result = a.sess.run([a.output], feed_dict={a.input: state})
 result = a.act(state)
-action = np.argmax(result)
+#action = np.argmax(result)
 print(result)
 print(action)
 
