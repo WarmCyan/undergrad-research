@@ -24,16 +24,30 @@ class Environment:
     def __init__(self):
         self.env = gym.make('SpaceInvaders-v0')
         #state_0 = env.reset()
+
+        self.seqSize = 4 # how many frames to include in a sequence
+        self.frameSeq = []
+        
         print("Environment initialized")
 
     def getInitialState(self):
-        return self.preprocessFrame(self.env.reset())
+        frame = self.preprocessFrame(self.env.reset())
+        self.frameSeq.append(frame)
+        self.frameSeq.append(frame)
+        self.frameSeq.append(frame)
+        self.frameSeq.append(frame)
+
+        #state = np.dstack(frameSeq)
+        state = np.dstack(self.frameSeq)
+        
+        return state
+        #return self.preprocessFrame(self.env.reset())
 
     def preprocessFrame(self, frame):
         frame = resize(frame, (110,84))
         frame = frame[18:102,0:84]
         frame = rgb2grey(frame)
-        frame = np.reshape(frame, (1,84,84,1))
+        #frame = np.reshape(frame, (1,84,84,1))
         return frame
 
     def act(self, action):
@@ -41,20 +55,32 @@ class Environment:
         if done: print("DONE")
 
         observationFrame = self.preprocessFrame(observation)
-        return observationFrame, reward, done
+
+        self.frameSeq.pop(0)
+        self.frameSeq.append(observationFrame)
+        state = np.dstack(self.frameSeq)
+        
+        return state, reward, done
 
 
 class Agent:
     def __init__(self):
         self.sess = tf.Session()
         self.epsilon = 1.0
+
+
+
+        self.replayMemory = []
+
+
+        
         #self.epsilon = 0.1
         print("agent initialized")
 
 
     def buildGraph(self):
-        #self.input = tf.placeholder(tf.float32, shape=(1, 84,84,4)) # TODO: pretty sure that shape isn't right
-        self.input = tf.placeholder(tf.float32, shape=(1,84,84,1)) # TODO: pretty sure that shape isn't right
+        self.input = tf.placeholder(tf.float32, shape=(1, 84,84,4)) # TODO: pretty sure that shape isn't right
+        #self.input = tf.placeholder(tf.float32, shape=(1,84,84,1)) # TODO: pretty sure that shape isn't right
 
         # convolutional layers
 
@@ -98,11 +124,11 @@ class Agent:
         #self.train_writer.add_summary(self.sess.run(summary_op), 1))
 
     # if none is returned, take random action
-    def act(self, frameInput):
+    def act(self, state):
         action = None
         
         exploreOrNo = random.uniform(0,1)
-        if exploreOrNo > self.epsilon: action = np.argmax(self.sess.run([self.output], feed_dict={self.input: frameInput}))
+        if exploreOrNo > self.epsilon: action = np.argmax(self.sess.run([self.output], feed_dict={self.input: [state]}))
         if self.epsilon > .1: self.epsilon -= .000009
 
         return action
