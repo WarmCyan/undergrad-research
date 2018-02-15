@@ -3,6 +3,9 @@ import gym
 import numpy as np
 #from scipy.misc import imresize
 from skimage.transform import resize
+from skimage.color import rgb2grey
+from skimage.io import imsave
+from skimage.util import crop
 
 
 # https://github.com/aymericdamien/TensorFlow-Examples/blob/master/examples/3_NeuralNetworks/convolutional_network.py 
@@ -23,9 +26,15 @@ class Environment:
         print("Environment initialized")
 
     def preprocessFrame(self, frame):
-        greyFrame = np.dot(frame[...,:3], [.3, .6, .1]) # convert to grey scale? TODO: don't think that's actually what it does?
-        return resize(greyFrame, (84,84))
-        
+        frame = resize(frame, (110,84))
+        frame = frame[18:102,0:84]
+        return rgb2grey(frame)
+
+    def act(self, action):
+        observation, reward, done, info = self.env.step(action)
+        if done: print("DONE")
+
+        return observation, reward, done
 
 class Agent:
     def __init__(self):
@@ -89,5 +98,7 @@ a.buildGraph()
 print("done")
 
 e = Environment()
-frame = e.preprocessFrame(e.env.reset())
-
+frame0 = e.env.reset()
+imsave('frame0.png', frame0)
+frame1 = e.preprocessFrame(frame0)
+imsave('frame1.png', frame1)
