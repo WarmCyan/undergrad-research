@@ -81,7 +81,7 @@ class Agent:
     def buildGraph(self):
 
         ## -- Q NETWORK --
-        self.input = tf.placeholder(tf.float32, shape=(1, 84,84,4)) # TODO: pretty sure that shape isn't right
+        self.input = tf.placeholder(tf.float32, shape=(1, 84,84,4), name='input') # TODO: pretty sure that shape isn't right
         # convolutional layers
 
 
@@ -132,19 +132,39 @@ class Agent:
 
         ## -- Q-hat NETWORK -- (target network)
             
-        self.t_input = tf.placeholder(tf.float32, shape=(1, 84,84,4)) # TODO: pretty sure that shape isn't right
+        self.t_input = tf.placeholder(tf.float32, shape=(1, 84,84,4), name='t_input') # TODO: pretty sure that shape isn't right
         # convolutional layers
 
+
+        # filter: [filter_height, filter_width, in_channels, out_channels ]
+        # stride (NHWC): [batchsize, stride_height, stride_width, channels]
+
         # 32 filters, kernel size of 8, stride of 4
-        self.t_conv1 = tf.layers.conv2d(self.t_input, 32, 8, 4, activation=tf.nn.relu, name='t_conv1')
+        #self.conv1 = tf.layers.conv2d(self.input, 32, 8, 4, activation=tf.nn.relu, name='conv1')
+        with tf.name_scope('t_conv1'):
+            self.t_w1 = tf.Variable(tf.random_normal([8, 8, 4, 32]), name='t_weights1')
+            self.t_b1 = tf.Variable(tf.random_normal([32]), name='t_bias1')
+            self.t_conv1 = tf.nn.conv2d(self.t_input, self.t_w1, [1, 4, 4, 1], "VALID", name='t_conv1') 
+            self.t_conv1_relu = tf.nn.relu(tf.nn.bias_add(self.t_conv1, self.t_b1))
         
         # 64 filters, kernel size of 4, stride of 2
-        self.t_conv2 = tf.layers.conv2d(self.t_conv1, 64, 4, 2, activation=tf.nn.relu, name='t_conv2')
-        
+        #self.conv2 = tf.layers.conv2d(self.conv1, 64, 4, 2, activation=tf.nn.relu, name='conv2')
+        with tf.name_scope('t_conv2'):
+            self.t_w2 = tf.Variable(tf.random_normal([4, 4, 32, 64]), name='t_weights2')
+            self.t_b2 = tf.Variable(tf.random_normal([64]), name='t_bias2')
+            self.t_conv2 = tf.nn.conv2d(self.t_conv1_relu, self.t_w2, [1, 2, 2, 1], "VALID", name='t_conv2') 
+            self.t_conv2_relu = tf.nn.relu(tf.nn.bias_add(self.t_conv2, self.t_b2))
+            
         # 64 filters, kernel size of 3, stride of 1
-        self.t_conv3 = tf.layers.conv2d(self.t_conv2, 64, 3, 1, activation=tf.nn.relu, name='t_conv3')
-        self.t_conv3_out = tf.reshape(self.t_conv3, [-1, 3136], name='t_conv3_flatten')
-
+        #self.conv3 = tf.layers.conv2d(self.conv2_relu, 64, 3, 1, activation=tf.nn.relu, name='conv3')
+        #self.conv3_out = tf.reshape(self.conv3, [-1, 3136], name='conv3_flatten')
+        with tf.name_scope('t_conv3'):
+            self.t_w3 = tf.Variable(tf.random_normal([3, 3, 64, 64]), name='t_weights3')
+            self.t_b3 = tf.Variable(tf.random_normal([64]), name='t_bias3')
+            self.t_conv3 = tf.nn.conv2d(self.t_conv2_relu, self.t_w3, [1, 1, 1, 1], "VALID", name='t_conv3') 
+            self.t_conv3_relu = tf.nn.relu(tf.nn.bias_add(self.t_conv3, self.t_b3))
+            
+        self.t_conv3_out = tf.reshape(self.t_conv3_relu, [-1, 3136], name='t_conv3_flatten')
 
         # fully conected layer
         with tf.name_scope('t_fully_connected'):
@@ -152,7 +172,6 @@ class Agent:
             self.t_fc_b = tf.Variable(tf.random_normal([512]), name='t_fc_biases') # fully connected biases
 
             self.t_fc_out = tf.nn.relu_layer(self.t_conv3_out, self.t_fc_w, self.t_fc_b, name='t_fc_out')
-            
 
         # output layer (for space invaders, 6 possible outputs)
         with tf.name_scope('t_output'):
@@ -160,16 +179,55 @@ class Agent:
             self.t_out_b = tf.Variable(tf.random_normal([6]), name='t_out_biases')
 
             self.t_output = tf.matmul(self.t_fc_out, self.t_out_w) + self.t_out_b
+
+
+
+            
+        #self.t_input = tf.placeholder(tf.float32, shape=(1, 84,84,4)) # TODO: pretty sure that shape isn't right
+        # convolutional layers
+
+        # 32 filters, kernel size of 8, stride of 4
+        #self.t_conv1 = tf.layers.conv2d(self.t_input, 32, 8, 4, activation=tf.nn.relu, name='t_conv1')
+        
+        # 64 filters, kernel size of 4, stride of 2
+        #self.t_conv2 = tf.layers.conv2d(self.t_conv1, 64, 4, 2, activation=tf.nn.relu, name='t_conv2')
+        
+        # 64 filters, kernel size of 3, stride of 1
+        #self.t_conv3 = tf.layers.conv2d(self.t_conv2, 64, 3, 1, activation=tf.nn.relu, name='t_conv3')
+        #self.t_conv3_out = tf.reshape(self.t_conv3, [-1, 3136], name='t_conv3_flatten')
+
+
+        # fully conected layer
+        #with tf.name_scope('t_fully_connected'):
+            #self.t_fc_w = tf.Variable(tf.random_normal([3136, 512]), name='t_fc_weights') 
+            #self.t_fc_b = tf.Variable(tf.random_normal([512]), name='t_fc_biases') # fully connected biases
+
+            #self.t_fc_out = tf.nn.relu_layer(self.t_conv3_out, self.t_fc_w, self.t_fc_b, name='t_fc_out')
+            
+
+        # output layer (for space invaders, 6 possible outputs)
+        #with tf.name_scope('t_output'):
+            #self.t_out_w = tf.Variable(tf.random_normal([512, 6]), name='t_out_weights')
+            #self.t_out_b = tf.Variable(tf.random_normal([6]), name='t_out_biases')
+
+            #self.t_output = tf.matmul(self.t_fc_out, self.t_out_w) + self.t_out_b
             
 
 
         ## -- RESET OPERATIONS --
-        with tf.name_scope('reset'):
-            #self.reset_conv3 = tf.assign(self.t_conv3, self.conv3)
-            self.reset_fc_w = tf.assign(self.t_fc_w, self.fc_w)
-            self.reset_fc_b = tf.assign(self.t_fc_b, self.fc_b)
-            self.reset_out_w = tf.assign(self.t_out_w, self.out_w)
-            self.reset_out_b = tf.assign(self.t_out_b, self.out_b)
+        #with tf.name_scope('reset'):
+        self.reset_conv1_w = tf.assign(self.t_w1, self.w1)
+        self.reset_conv1_b = tf.assign(self.t_b1, self.b1)
+        self.reset_conv2_w = tf.assign(self.t_w2, self.w2)
+        self.reset_conv2_b = tf.assign(self.t_b2, self.b2)
+        self.reset_conv3_w = tf.assign(self.t_w3, self.w3)
+        self.reset_conv3_b = tf.assign(self.t_b3, self.b3)
+        self.reset_fc_w = tf.assign(self.t_fc_w, self.fc_w)
+        self.reset_fc_b = tf.assign(self.t_fc_b, self.fc_b)
+        self.reset_out_w = tf.assign(self.t_out_w, self.out_w)
+        self.reset_out_b = tf.assign(self.t_out_b, self.out_b)
+
+        self.reset_op = tf.group(self.reset_conv1_w, self.reset_conv1_b, self.reset_conv2_w, self.reset_conv3_w, self.reset_conv3_b, self.reset_fc_w, self.reset_fc_b, self.reset_out_w, self.reset_out_b)
             
 
         self.merged_summaries = tf.summary.merge_all()
@@ -180,7 +238,7 @@ class Agent:
         #print("t_fc:")
         #print(self.t_fc_w.eval(self.sess))
         
-        self.sess.run([self.reset_fc_w, self.reset_fc_b, self.reset_out_w, self.reset_out_b])
+        self.sess.run([self.reset_fc_w, self.reset_fc_b, self.reset_out_w, self.reset_out_b, ])
         #print("t_fc after reset:")
         #print(self.t_fc_w.eval(self.sess))
         
