@@ -37,6 +37,11 @@ class Agent:
 
         self.numPossibleActions = numPossibleActions
 
+        self.epsilon = 1.0
+        self.epsilon_minimum = .1
+        self.epsilon_time = 4000000 # number of frames before fully annealed
+        self.epsilon_anneal_rate = (self.epsilon - self.epsilon_minimum) / self.epsilon_time
+
         print("Agent initialized")
 
 
@@ -93,6 +98,15 @@ class Agent:
         
         self.train_writer = tf.summary.FileWriter('../tensorboard_data/a3c' , self.sess.graph)
         self.train_writer.add_graph(self.sess.graph)
+
+
+
+    def (self, state):
+        action = None
+        
+        exploreOrNo = random.uniform(0, 1)
+        
+        if self.epsilon > self.epsilon_time
 
 
 a = Agent(6)
