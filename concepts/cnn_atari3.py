@@ -70,6 +70,7 @@ class Agent:
 
 
 
+        # initialize replay memory D
         self.replayMemory = []
 
 
@@ -238,12 +239,26 @@ class Agent:
         #print("t_fc:")
         #print(self.t_fc_w.eval(self.sess))
         
-        self.sess.run([self.reset_op])
+        #self.sess.run([self.reset_op])
         #print("t_fc after reset:")
         #print(self.t_fc_w.eval(self.sess))
         
         self.train_writer = tf.summary.FileWriter('../tensorboard_data/cnn_atari3' , self.sess.graph)
         self.train_writer.add_graph(self.sess.graph)
+
+
+    def resetTarget(self):
+        self.sess.run([self.reset_op])
+
+
+    # where transition follows form: (state, action, reward, newstate)
+    def storeTransition(self, transition):
+        self.replayMemory.push(transition)
+
+
+    
+    def getTransitionMinibatch(self):
+        pass
 
 
     # if none is returned, take random action
