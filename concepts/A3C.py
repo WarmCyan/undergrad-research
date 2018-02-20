@@ -22,13 +22,35 @@ class Environment:
         
         print("Environment initialized")
 
+    def getInitialState(self):
+        frame = self.preprocessFrame(self.env.reset())
+        self.frameSeq.append(frame) # TODO: make this based off of self.seqsize
+        self.frameSeq.append(frame)
+        self.frameSeq.append(frame)
+        self.frameSeq.append(frame)
 
+        state = np.dstack(self.frameSeq)
+        
+        return state
 
     def preprocessFrame(self, frame):
         frame = resize(frame, (110,84))
         frame = frame[18:102,0:84]
         frame = rgb2grey(frame)
         return frame
+
+
+    def act(self, action):
+        observation, reward, terminal, info = self.env.step(action)
+        if terminal: print("TERMINAL STATE REACHED")
+
+        observationFrame = self.preprocessFrame(observation)
+        
+        self.frameSeq.pop(0)
+        self.frameSeq.append(observationFrame)
+        state = np.dstack(self.frameSeq)
+        
+        return state, reward, terminal
 
 
 class Agent:
@@ -101,13 +123,85 @@ class Agent:
 
 
 
-    def (self, state):
+    def act(self, state):
         action = None
         
-        exploreOrNo = random.uniform(0, 1)
+        #exploreOrNo = random.uniform(0, 1)
+        #if exploreOrNo > self.epsilon: action = I
+
+        actionVec = self.sess.run([self.policy_out], feed_dict={self.input: [state]})
+
+        return np.argmax(actionVec)
+
+        #if self.epsilon > self.epsilon_minimum: self.epsilon -= self.epsilon_anneal_rate
+
+
+agent = Agent(6)
+agent.buildGraph()
+
+e = Environment()
+#in_0 = e.getInitialState()
+#action = a.act(in_0)
+#print(action)
+
+GAMMA = .99
+T_MAX = 40000 # TODO: no idea what this actually was in study, find out (num episodes?) edit: no, this is not number of episode, as it also increases each action
+t_max = 4000 # TODO: also no idea what this should be (maximum frames in a game)
+
+
+history = []
+
+
+# initialize thread step counter t <- 1
+
+# repeat until T > T_MAX
+for T in range(T_MAX):
+    
+    # reset gradients dtheta <- 0 and dtheta_v <- 0
+
+    # synchronize thread-specific parameters theta_ = theta and theta_v_ <- theta_v
+
+    # t_start = t
+
+    # get state s_t
+    s_t = e.getInitialState()
+    terminal = False
+
+    # repeat until terminal state or t-t_start == t_max
+    while not terminal: # TODO: and t stuff
+
+        # perform a_t according to policy(a_t|s_t;theta_)
+        a_t = a.act(s_t)
+
+        # receive reward r_t and new state s_{t+1}
+        s_t1, r_t, terminal = e.act(a_t) # TODO: specify target network? That should probably go in act function in agent
+
+        # TODO: I assume (s_t, a_t, r_t, s_t1) needs to be stored?
+        history.append((s_t, a_t, r_t, s_t1))
         
-        if self.epsilon > self.epsilon_time
+        # t <- t + 1
+        
+        # T <- T + 1
+    
+    # NOTE: R = 0 (if terminal), V(s_t, theta_v_)
+    R = 0
+    if not terminal: R = somvaluefuncion() 
+
+    # for i in {t - 1, ..., t_start}
+    for i in range(t-1, t_start, -1):
+        transition = history[i - t_start]
+        s_i = transition[0]
+        a_i = transition[1]
+        r_i = transition[2]
+        
+        # R <- r_i + GAMMA*R
+        R = r_i + GAMMA*R
+
+        # Accumulate gradients wrt 
+        
+
+        
+    
 
 
-a = Agent(6)
-a.buildGraph()
+
