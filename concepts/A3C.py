@@ -12,6 +12,7 @@ import random
 # https://jaromiru.com/2017/02/16/lets-make-an-a3c-theory/ 
 # https://jaromiru.com/2017/03/26/lets-make-an-a3c-implementation/ 
 # https://github.com/jaara/AI-blog/blob/master/CartPole-A3C.py
+# https://medium.com/emergent-future/simple-reinforcement-learning-with-tensorflow-part-8-asynchronous-actor-critic-agents-a3c-c88f72a5e9f2 
 
 class Environment:
     def __init__(self):
@@ -59,6 +60,9 @@ class Agent:
 
         self.numPossibleActions = numPossibleActions
 
+
+        self.BETA = .01 # NOTE: this is the entropy regularization term
+
         self.epsilon = 1.0
         self.epsilon_minimum = .1
         self.epsilon_time = 4000000 # number of frames before fully annealed
@@ -104,14 +108,47 @@ class Agent:
             
             # TODO: do we need biases as well?
             self.policy_out = tf.nn.softmax(tf.matmul(self.fc_out, self.policy_w))
+            
+            # NOTE: used for gradient calculations
+            self.policy_log_prob = tf.log(self.policy_out)
 
         # Only a SINGLE output, just a single linear value
         with tf.name_scope('value'):
             self.value_w = tf.Variable(tf.random_normal([256, 1]), name='value_w')
 
-            # TODO: do we need a bias for this?
+            # TODO: do we need a bias for this? (edit: I'm pretty sure since it's a single linear value, there's no point in having a bias value?)
 
             self.value_out = tf.matmul(self.fc_out, self.value_w)
+
+
+
+        # policy gradient calculation
+        self.R = tf.placeholder(tf.float32, shape=(1), name='reward_input')
+
+        self.entropy = tf.reduce_sum(self.policy_out * self.policy_log_prob, name='entropy')
+        
+        with tf.name_scope('advantage'):
+            self.A = self.R - self.value_out
+
+        with tf.name_scope("policy_loss"):
+            self.policy_loss = self.policy_log_prob*self.A # NOTE: the graph of this doesn't look right...the mul term doesn't go into the gradient at all, is that correct?
+            #self.dtheta_ = tf.gradients(self.policy_gradient_term, [self.policy_w, self.fc_w, self.w2, self.w1]) # TODO: no idea if this is correct at all
+
+        # TODO: add an entropy term to the gradient
+
+
+        with tf.name_scope('value_loss'):
+            self.value_loss = tf.square(self.A)
+            #self.dtheta_v_ = tf.gradients(self.A, [self.value_w]) # TODO: does this still apply to all weights or only value weights?
+            
+
+        with tf.name_scope("objective"):
+            self.full_objective = self.policy_loss + self.value_loss + self.entropy*self.BETA
+            localvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) # TODO: eventually need a scope variable passed in as well I think? (once go to multithreading)
+            self.gradients = tf.gradients(self.full_objective, localvars)
+
+            # TODO: still doesn't look right, the full_objective stuff doesn't actually lead into the gradients variable??
+
 
 
 
@@ -151,17 +188,23 @@ t_max = 4000 # TODO: also no idea what this should be (maximum frames in a game)
 
 history = []
 
+T = 0
 
 # initialize thread step counter t <- 1
+t = 1
 
+'''
 # repeat until T > T_MAX
 for T in range(T_MAX):
     
     # reset gradients dtheta <- 0 and dtheta_v <- 0
+    dtheta = 0
+    dtheta_v = 0
 
-    # synchronize thread-specific parameters theta_ = theta and theta_v_ <- theta_v
+    # synchronize thread-specific parameters theta_ = theta and theta_v_ <- theta_v # NOTE: this is resetting the local thread graph to the global graph
 
     # t_start = t
+    t_start = t
 
     # get state s_t
     s_t = e.getInitialState()
@@ -180,8 +223,10 @@ for T in range(T_MAX):
         history.append((s_t, a_t, r_t, s_t1))
         
         # t <- t + 1
+        t += 1
         
         # T <- T + 1
+        T += 1
     
     # NOTE: R = 0 (if terminal), V(s_t, theta_v_)
     R = 0
@@ -203,10 +248,4 @@ for T in range(T_MAX):
 
     # perform asynchronous update of theta using dtheta and of theta_v using dtheta_v
         
-        
-
-        
-    
-
-
-
+'''
