@@ -197,7 +197,12 @@ for T in range(T_MAX):
         # R <- r_i + GAMMA*R
         R = r_i + GAMMA*R
 
-        # Accumulate gradients wrt 
+        # Accumulate gradients wrt theta_: dtheta <- dtheta + {nabla_theta_}(log(policy(a_i|s_i;theta_)(R-V(s_i;theta_v_))
+
+        # Accumulate gradients wrt theta_v_: dtheta_v <- dtheta_v + {partial derivative}(R-V(s_i;theta_v_))^2 / {partial derivative}theta_v_
+
+    # perform asynchronous update of theta using dtheta and of theta_v using dtheta_v
+        
         
 
         
