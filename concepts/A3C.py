@@ -62,6 +62,7 @@ class Agent:
 
 
         self.BETA = .01 # NOTE: this is the entropy regularization term
+        self.value_loss_weight = .4
 
         self.epsilon = 1.0
         self.epsilon_minimum = .1
@@ -143,7 +144,7 @@ class Agent:
             
 
         with tf.name_scope("objective"):
-            self.full_objective = self.policy_loss + self.value_loss + self.entropy*self.BETA
+            self.full_objective = self.policy_loss + self.value_loss_weight*self.value_loss + self.entropy*self.BETA
             localvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) # TODO: eventually need a scope variable passed in as well I think? (once go to multithreading)
             self.gradients = tf.gradients(self.full_objective, localvars)
 
