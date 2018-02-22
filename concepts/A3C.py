@@ -37,13 +37,16 @@ def discount(x, gamma):
 class Manager:
 
     def __init__(self):
+
+        self.learningRate = .0001
         
-        self.globalNetwork = Network('global')
+        self.optimizer = tf.train.AdamOptimizer(self.learningRate)
+        self.globalNetwork = Network('global', self.optimizer)
         self.numWorkers = multiprocessing.cpu_count()
         self.workers = []
 
         for i in range(self.numWorkers):
-            self.workers.append(Worker("worker_" + str(i)))
+            self.workers.append(Worker("worker_" + str(i), self.optimizer))
 
 
     def run(self):
@@ -64,9 +67,11 @@ class Manager:
 
 class Worker:
 
-    def __init__(self, name):
+    def __init__(self, name, optimizer):
         self.name = name
-        self.network = Network(self.name)
+        #self.optimizer = optimizer
+        
+        self.network = Network(self.name, optimizer)
         self.network.buildGraph()
 
         self.resetWeights = getWeightChangeOps("global", self.name)
@@ -83,6 +88,28 @@ class Worker:
         values = history[:,4]
 
         discountedRewards = discount(rewards, self.GAMMA)
+
+        # NOTE: values[1:] = the next state, values[:-1] = the previous state
+        # A = Q - V(s)
+        # Q = r + yV(s')
+        # A = r + yV(s') - V(S)
+        advantages = rewards + self.GAMMA*values[1:] - self.values[:-1]
+
+        # TODO: supposedly we have to discount advantages, I don't know if that is correct or not (shouldn't we just use discounted rewards?)
+
+
+
+        # apply gradients to global network
+        p_loss, v_loss = sess.run([self.network.policy_loss, self.network.value_loss, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
+
+        print("Policy loss:",p_loss,"Value loss:",v_loss)
+
+
+        
+
+        
+        
+        
     
     def work(self, session, coordinator):
         while not coordinator.should_stop():
@@ -140,8 +167,10 @@ class Worker:
 
 
 class Network:
-    def __init__(self, scope):
+    def __init__(self, scope, optimizer):
         self.scope = scope
+        self.optimizer = optimizer
+        
         
 
     def buildGraph(self):
@@ -221,15 +250,28 @@ class Network:
 
         if self.scope != 'global':
             self.actions = tf.placeholder(shape=[None], dtype=tf.int32)
-            self.target_v = tf.placehodler(shape=[None], dtype=tf.float32)
+            self.target_v = tf.placeholder(shape=[None], dtype=tf.float32)
             self.advantages = tf.placeholder(shape=[None], dtype=tf.float32)
             
             self.actions_onehot = tf.one_hot(self.actions, 6, dtype=tf.float32)
             self.responsible_outputs = tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
             
             # losses
-            self.value_loss = tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value, [-1])))
+            # NOTE: .5's seem arbitrary, these should be set as hyperparameters
+            self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value_out, [-1])))
+            self.entropy = -tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
+            self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
+            self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * .01 # NOTE: .01 should also be a hyperparameter
 
+            local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
+            self.gradients = tf.gradients(self.loss, local_vars)
+            self.var_norms = tf.global_norm(local_vars)
+            self.clipped_gradients = tf.clip_by_global_norm(self.gradients, 40.0) # TODO: where is 40 coming from???
+            
+            global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
+            self.apply_gradients = self.optimizer.apply_gradients(zip(self.clipped_gradients, global_vars))
+            
+            
             
 
 
@@ -288,6 +330,15 @@ class Environment:
         return state, reward, terminal
 
 
+
+
+m = Manager()
+m.run()
+
+
+
+
+'''
 class Agent:
     def __init__(self, numPossibleActions):
         self.sess = tf.Session()
@@ -428,6 +479,7 @@ T = 0
 # initialize thread step counter t <- 1
 t = 1
 
+'''
 '''
 # repeat until T > T_MAX
 for T in range(T_MAX):
