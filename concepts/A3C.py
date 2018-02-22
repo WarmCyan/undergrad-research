@@ -82,7 +82,7 @@ class Manager:
                 action = np.argmax(policyVec)
 
                 e.env.render()
-                state, reward, terminal = e.env.act(action)
+                state, reward, terminal = e.act(action)
  
             
 
