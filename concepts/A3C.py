@@ -21,6 +21,7 @@ import scipy.signal
 # https://jaromiru.com/2017/03/26/lets-make-an-a3c-implementation/ 
 # https://github.com/jaara/AI-blog/blob/master/CartPole-A3C.py
 # https://medium.com/emergent-future/simple-reinforcement-learning-with-tensorflow-part-8-asynchronous-actor-critic-agents-a3c-c88f72a5e9f2 
+# https://medium.com/@henrymao/reinforcement-learning-using-asynchronous-advantage-actor-critic-704147f91686 
 
 
 # returns a set of operations to set all weights of destination scope to values of weights from source scope
