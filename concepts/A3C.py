@@ -9,6 +9,7 @@ from skimage.io import imsave
 import random
 import time
 
+import subprocess
 import multiprocessing
 import threading
 
@@ -61,6 +62,7 @@ class Manager:
         with tf.Session() as sess:
             coordinator = tf.train.Coordinator()
             sess.run(tf.global_variables_initializer())
+        
 
             # create worker threads
             worker_threads = []
@@ -69,20 +71,35 @@ class Manager:
                 t = threading.Thread(target=worker_function)
                 t.start()
                 worker_threads.append(t)
+                
+            # logging things
+            merged_summaries = tf.summary.merge_all()
+            train_writer = tf.summary.FileWriter('../tensorboard_data/a3c_full' , sess.graph)
+            train_writer.add_graph(sess.graph)
 
             coordinator.join(worker_threads)
 
+            subprocess.call(['notify-send', "A3C training completed!"])
 
-            # test it!
-            e = Environment()
-            state = e.getInitialState()
-            terminal = False
-            while not terminal:
-                policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
-                action = np.argmax(policyVec)
+            exit = False
+            user = input("type exit to quit, or anything else to run: ")
+            if user == "exit": exit = True
+            
+            while not exit:
+                # test it!
+                e = Environment()
+                state = e.getInitialState()
+                terminal = False
+                while not terminal:
+                    policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
+                    action = np.argmax(policyVec)
 
+                    e.env.render()
+                    state, reward, terminal = e.act(action)
+                
                 e.env.render()
-                state, reward, terminal = e.act(action)
+                user = input("type exit to quit, or anything else to run: ")
+                if user == "exit": exit = True
  
             
 
@@ -195,18 +212,19 @@ class Worker:
 
                 if t - t_start >= self.t_max:
                     p_loss, v_loss = self.train(history, session, v[0,0])
-                    print(self.name,"- Policy loss:",p_loss,"Value loss:",v_loss)
+                    print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
                     history = []
                     t_start = t
                     session.run(self.resetWeights)
                     
                     
             T += 1
+            
+            if len(history) > 0:
+                p_loss, v_loss = self.train(history, session, 0.0)
+                print("Policy loss:",p_loss,"Value loss:",v_loss)
 
-            p_loss, v_loss = self.train(history, session, 0.0)
-            print("Policy loss:",p_loss,"Value loss:",v_loss)
-
-            if T == 5: break
+            if T == 500: break
 
             #R = 0
             #if not terminal: R = 
