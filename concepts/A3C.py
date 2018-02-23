@@ -64,18 +64,18 @@ class Manager:
             coordinator = tf.train.Coordinator()
             sess.run(tf.global_variables_initializer())
         
+            # logging things
+            merged_summaries = tf.summary.merge_all()
+            train_writer = tf.summary.FileWriter('../tensorboard_data/a3c_full' , sess.graph)
 
             # create worker threads
             worker_threads = []
             for worker in self.workers:
-                worker_function = lambda: worker.work(sess, coordinator)
+                worker_function = lambda: worker.work(sess, coordinator, train_writer)
                 t = threading.Thread(target=worker_function)
                 t.start()
                 worker_threads.append(t)
                 
-            # logging things
-            merged_summaries = tf.summary.merge_all()
-            train_writer = tf.summary.FileWriter('../tensorboard_data/a3c_full' , sess.graph)
             train_writer.add_graph(sess.graph)
 
             coordinator.join(worker_threads)
@@ -89,6 +89,7 @@ class Manager:
             while not exit:
                 # test it!
                 e = Environment()
+                e.env = gym.wrappers.Monitor(e.env, './tmp/testing')
                 state = e.getInitialState()
                 terminal = False
                 while not terminal:
@@ -133,6 +134,7 @@ class Worker:
         #rewards = np.asarray(rewards.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
         #print("rewards:",rewards.shape)
         discountedRewards = discount(rewards, self.GAMMA)
+        print(discountedRewards)
         #print("rewards:",rewards.shape)
         #print("values:",values[1:].shape)
 
@@ -159,11 +161,13 @@ class Worker:
 
 
         # apply gradients to global network
-        p_loss, v_loss, _ = session.run([self.network.policy_loss, self.network.value_loss, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
+        summary, p_loss, v_loss, _ = session.run([self.network.log_op, self.network.policy_loss, self.network.value_loss, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
+        #p_loss, v_loss, _ = session.run([self.network.policy_loss, self.network.value_loss, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
         #p_loss, v_loss = session.run([self.network.policy_loss, self.network.value_loss], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
 
         #print("Policy loss:",p_loss,"Value loss:",v_loss)
-        return p_loss, v_loss
+        return summary, p_loss, v_loss
+        #return p_loss, v_loss
 
 
         
@@ -172,7 +176,7 @@ class Worker:
         
         
     
-    def work(self, session, coordinator):
+    def work(self, session, coordinator, train_writer):
         t = 0
         T = 0
         while not coordinator.should_stop():
@@ -212,7 +216,9 @@ class Worker:
                 t += 1
 
                 if t - t_start >= self.t_max:
-                    p_loss, v_loss = self.train(history, session, v[0,0])
+                    summary, p_loss, v_loss = self.train(history, session, v[0,0])
+                    train_writer.add_summary(summary, t)
+                    #p_loss, v_loss = self.train(history, session, v[0,0], merged_summaries)
                     print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
                     history = []
                     t_start = t
@@ -222,10 +228,12 @@ class Worker:
             T += 1
             
             if len(history) > 0:
-                p_loss, v_loss = self.train(history, session, 0.0)
+                summary, p_loss, v_loss = self.train(history, session, 0.0)
+                #p_loss, v_loss = self.train(history, session, 0.0, merged_summaries)
                 print("Policy loss:",p_loss,"Value loss:",v_loss)
 
-            if T == 500: break
+            #if T == 500: break
+            if T == 5: break
 
             #R = 0
             #if not terminal: R = 
@@ -351,6 +359,17 @@ class Network:
                 self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
                 self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * .01 # NOTE: .01 should also be a hyperparameter
 
+
+                # summaries
+                self.log_value_loss = tf.summary.scalar('value_loss', self.value_loss)
+                self.log_policy_loss = tf.summary.scalar('policy_loss', self.policy_loss)
+                self.log_loss = tf.summary.scalar('loss', self.loss)
+                #print(self.loss)
+
+
+                #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss, self.log_loss])
+                self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss])
+
                 local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
                 self.gradients = tf.gradients(self.loss, local_vars)
                 self.var_norms = tf.global_norm(local_vars)
@@ -425,205 +444,3 @@ class Environment:
 
 m = Manager()
 m.run()
-
-
-
-
-'''
-class Agent:
-    def __init__(self, numPossibleActions):
-        self.sess = tf.Session()
-
-        self.numPossibleActions = numPossibleActions
-
-
-        self.BETA = .01 # NOTE: this is the entropy regularization term
-        self.value_loss_weight = .4
-
-        self.epsilon = 1.0
-        self.epsilon_minimum = .1
-        self.epsilon_time = 4000000 # number of frames before fully annealed
-        self.epsilon_anneal_rate = (self.epsilon - self.epsilon_minimum) / self.epsilon_time
-
-        print("Agent initialized")
-
-
-    def buildGraph(self):
-        
-        # NOTE: same preprocessing as in DQN paper
-
-        self.input = tf.placeholder(tf.float32, shape=(1,84,84,4), name='input') # TODO: pretty sure that shape isn't right
-        
-        # 16 filters, kernel size of 8, stride of 4
-        with tf.name_scope('conv1'):
-            self.w1 = tf.Variable(tf.random_normal([8, 8, 4, 16]), name='weights1')
-            self.b1 = tf.Variable(tf.random_normal([16]), name='bias1')
-            self.conv1 = tf.nn.conv2d(self.input, self.w1, [1, 4, 4, 1], "VALID", name='conv1') 
-            self.conv1_relu = tf.nn.relu(tf.nn.bias_add(self.conv1, self.b1))
-            
-        # 32 filters, kernel size of 4, stride of 2
-        with tf.name_scope('conv2'):
-            self.w2 = tf.Variable(tf.random_normal([4, 4, 16, 32]), name='weights2')
-            self.b2 = tf.Variable(tf.random_normal([32]), name='bias2')
-            self.conv2 = tf.nn.conv2d(self.conv1_relu, self.w2, [1, 2, 2, 1], "VALID", name='conv2') 
-            self.conv2_relu = tf.nn.relu(tf.nn.bias_add(self.conv2, self.b2))
-
-            # flattened size is 9*9*32 = 2592
-            self.conv2_out = tf.reshape(self.conv2_relu, [-1, 2592], name='conv2_flatten') 
-            
-
-        # fully connected layer with 256 hidden units
-        with tf.name_scope('fully_connected'):
-            self.fc_w = tf.Variable(tf.random_normal([2592, 256]), name='fc_weights') 
-            self.fc_b = tf.Variable(tf.random_normal([256]), name='fc_biases') # fully connected biases
-
-            self.fc_out = tf.nn.relu_layer(self.conv2_out, self.fc_w, self.fc_b, name='fc_out')
-
-        # policy output, policy = distribution of probabilities over actions, use softmax to choose highest probability action
-        with tf.name_scope('policy'):
-            self.policy_w = tf.Variable(tf.random_normal([256, self.numPossibleActions]), name='policy_w')
-            
-            # TODO: do we need biases as well?
-            self.policy_out = tf.nn.softmax(tf.matmul(self.fc_out, self.policy_w))
-            
-            # NOTE: used for gradient calculations
-            self.policy_log_prob = tf.log(self.policy_out)
-
-        # Only a SINGLE output, just a single linear value
-        with tf.name_scope('value'):
-            self.value_w = tf.Variable(tf.random_normal([256, 1]), name='value_w')
-
-            # TODO: do we need a bias for this? (edit: I'm pretty sure since it's a single linear value, there's no point in having a bias value?)
-
-            self.value_out = tf.matmul(self.fc_out, self.value_w)
-
-
-
-        # policy gradient calculation
-        self.R = tf.placeholder(tf.float32, shape=(1), name='reward_input')
-
-        self.entropy = tf.reduce_sum(self.policy_out * self.policy_log_prob, name='entropy')
-        
-        with tf.name_scope('advantage'):
-            self.A = self.R - self.value_out
-
-        with tf.name_scope("policy_loss"):
-            self.policy_loss = self.policy_log_prob*self.A # NOTE: the graph of this doesn't look right...the mul term doesn't go into the gradient at all, is that correct?
-            #self.dtheta_ = tf.gradients(self.policy_gradient_term, [self.policy_w, self.fc_w, self.w2, self.w1]) # TODO: no idea if this is correct at all
-
-        # TODO: add an entropy term to the gradient
-
-
-        with tf.name_scope('value_loss'):
-            self.value_loss = tf.square(self.A)
-            #self.dtheta_v_ = tf.gradients(self.A, [self.value_w]) # TODO: does this still apply to all weights or only value weights?
-            
-
-        with tf.name_scope("objective"):
-            self.full_objective = self.policy_loss + self.value_loss_weight*self.value_loss + self.entropy*self.BETA
-            localvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) # TODO: eventually need a scope variable passed in as well I think? (once go to multithreading)
-            self.gradients = tf.gradients(self.full_objective, localvars)
-
-            # TODO: still doesn't look right, the full_objective stuff doesn't actually lead into the gradients variable??
-
-
-
-
-        #self.merged_summaries = tf.summary.merge_all()
-        #self.sess.run(tf.global_variables_initializer())
-        
-        #self.train_writer = tf.summary.FileWriter('../tensorboard_data/a3c' , self.sess.graph)
-        #self.train_writer.add_graph(self.sess.graph)
-
-
-
-    def act(self, state):
-        action = None
-        
-        #exploreOrNo = random.uniform(0, 1)
-        #if exploreOrNo > self.epsilon: action = I
-
-        actionVec = self.sess.run([self.policy_out], feed_dict={self.input: [state]})
-
-        return np.argmax(actionVec)
-
-        #if self.epsilon > self.epsilon_minimum: self.epsilon -= self.epsilon_anneal_rate
-
-
-agent = Agent(6)
-agent.buildGraph()
-
-e = Environment()
-#in_0 = e.getInitialState()
-#action = a.act(in_0)
-#print(action)
-
-GAMMA = .99
-T_MAX = 40000 # TODO: no idea what this actually was in study, find out (num episodes?) edit: no, this is not number of episode, as it also increases each action
-t_max = 4000 # TODO: also no idea what this should be (maximum frames in a game)
-
-
-history = []
-
-T = 0
-
-# initialize thread step counter t <- 1
-t = 1
-
-'''
-'''
-# repeat until T > T_MAX
-for T in range(T_MAX):
-    
-    # reset gradients dtheta <- 0 and dtheta_v <- 0
-    dtheta = 0
-    dtheta_v = 0
-
-    # synchronize thread-specific parameters theta_ = theta and theta_v_ <- theta_v # NOTE: this is resetting the local thread graph to the global graph
-
-    # t_start = t
-    t_start = t
-
-    # get state s_t
-    s_t = e.getInitialState()
-    terminal = False
-
-    # repeat until terminal state or t-t_start == t_max
-    while not terminal: # TODO: and t stuff
-
-        # perform a_t according to policy(a_t|s_t;theta_)
-        a_t = a.act(s_t)
-
-        # receive reward r_t and new state s_{t+1}
-        s_t1, r_t, terminal = e.act(a_t) # TODO: specify target network? That should probably go in act function in agent
-
-        # TODO: I assume (s_t, a_t, r_t, s_t1) needs to be stored?
-        history.append((s_t, a_t, r_t, s_t1))
-        
-        # t <- t + 1
-        t += 1
-        
-        # T <- T + 1
-        T += 1
-    
-    # NOTE: R = 0 (if terminal), V(s_t, theta_v_)
-    R = 0
-    if not terminal: R = somvaluefuncion() 
-
-    # for i in {t - 1, ..., t_start}
-    for i in range(t-1, t_start, -1):
-        transition = history[i - t_start]
-        s_i = transition[0]
-        a_i = transition[1]
-        r_i = transition[2]
-        
-        # R <- r_i + GAMMA*R
-        R = r_i + GAMMA*R
-
-        # Accumulate gradients wrt theta_: dtheta <- dtheta + {nabla_theta_}(log(policy(a_i|s_i;theta_)(R-V(s_i;theta_v_))
-
-        # Accumulate gradients wrt theta_v_: dtheta_v <- dtheta_v + {partial derivative}(R-V(s_i;theta_v_))^2 / {partial derivative}theta_v_
-
-    # perform asynchronous update of theta using dtheta and of theta_v using dtheta_v
-        
-'''
