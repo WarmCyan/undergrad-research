@@ -12,6 +12,7 @@ import time
 import subprocess
 import multiprocessing
 import threading
+#from Queue import Queue
 
 import scipy
 import scipy.signal
@@ -40,23 +41,37 @@ def discount(x, gamma):
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
 
 
+atariEnvFree = True
+
+
+# hyperparameters
+GAME = "SpaceInvaders-v0"
+ACTION_SIZE = 6
+
+LEARNING_RATE = .0001
+NUM_WORKERS = 16
+
+
+
 class Manager:
 
     def __init__(self):
+
+        self.actionSpaceSize = 6
 
         self.learningRate = .0001
         
         self.optimizer = tf.train.AdamOptimizer(self.learningRate)
         self.globalNetwork = Network('global', self.optimizer)
-        self.globalNetwork.buildGraph()
+        self.globalNetwork.buildGraph(self.actionSpaceSize)
         
-        self.numWorkers = multiprocessing.cpu_count()
-        #self.numWorkers = 1 # NOTE: debug
+        #self.numWorkers = multiprocessing.cpu_count()
+        #self.numWorkers = 16 # NOTE: manual thread count override
         print("Number of threads: ", self.numWorkers)
         self.workers = []
 
         for i in range(self.numWorkers):
-            self.workers.append(Worker("worker_" + str(i), self.optimizer))
+            self.workers.append(Worker("worker_" + str(i), self.optimizer, self.actionSpaceSize))
 
 
     def run(self):
@@ -89,7 +104,7 @@ class Manager:
             while not exit:
                 # test it!
                 e = Environment()
-                e.env = gym.wrappers.Monitor(e.env, './tmp/testing')
+                e.env = gym.wrappers.Monitor(e.env, './tmp/testing', force=True)
                 state = e.getInitialState()
                 terminal = False
                 while not terminal:
@@ -107,16 +122,17 @@ class Manager:
 
 class Worker:
 
-    def __init__(self, name, optimizer):
+    def __init__(self, name, optimizer, actionSpaceSize):
         self.name = name
         #self.optimizer = optimizer
         
         self.network = Network(self.name, optimizer)
-        self.network.buildGraph()
+        self.network.buildGraph(actionSpaceSize)
 
         self.resetWeights = getWeightChangeOps("global", self.name)
 
-        self.t_max = 30
+        #self.t_max = 30
+        self.t_max = 5
         self.GAMMA = .99
 
         print("Worker",self.name,"initialized...")
@@ -134,7 +150,7 @@ class Worker:
         #rewards = np.asarray(rewards.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
         #print("rewards:",rewards.shape)
         discountedRewards = discount(rewards, self.GAMMA)
-        print(discountedRewards)
+        #print(discountedRewards)
         #print("rewards:",rewards.shape)
         #print("values:",values[1:].shape)
 
@@ -185,7 +201,7 @@ class Worker:
             session.run(self.resetWeights)
 
             # get an environment instance
-            time.sleep(random.uniform(0.0,0.5))
+            #time.sleep(random.uniform(0.0,0.5))
             self.env = Environment()
 
             history = []
@@ -233,7 +249,8 @@ class Worker:
                 print("Policy loss:",p_loss,"Value loss:",v_loss)
 
             #if T == 500: break
-            if T == 5: break
+            #if T == 100: break
+            if T == 10: break
 
             #R = 0
             #if not terminal: R = 
@@ -266,7 +283,7 @@ class Network:
         
         
 
-    def buildGraph(self):
+    def buildGraph(self, actionSpaceSize):
         print("Building graph with scope", self.scope)
         with tf.variable_scope(self.scope):
             #self.input = tf.placeholder(tf.float32, shape=(1,84,84,4), name='input') # TODO: pretty sure that shape isn't right
@@ -299,7 +316,7 @@ class Network:
 
             # policy output, policy = distribution of probabilities over actions, use softmax to choose highest probability action
             with tf.name_scope('policy'):
-                self.policy_w = tf.Variable(tf.random_normal([256, 6]), name='policy_w')
+                self.policy_w = tf.Variable(tf.random_normal([256, actionSpaceSize]), name='policy_w')
                 
                 # TODO: do we need biases as well?
                 self.policy_out = tf.nn.softmax(tf.matmul(self.fc_out, self.policy_w))
@@ -349,7 +366,7 @@ class Network:
                 self.target_v = tf.placeholder(shape=[None], dtype=tf.float32, name='target_v',)
                 self.advantages = tf.placeholder(shape=[None], dtype=tf.float32, name='advantages')
                 
-                self.actions_onehot = tf.one_hot(self.actions, 6, dtype=tf.float32)
+                self.actions_onehot = tf.one_hot(self.actions, actionSpaceSize, dtype=tf.float32)
                 self.responsible_outputs = tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
                 
                 # losses
@@ -363,12 +380,12 @@ class Network:
                 # summaries
                 self.log_value_loss = tf.summary.scalar('value_loss', self.value_loss)
                 self.log_policy_loss = tf.summary.scalar('policy_loss', self.policy_loss)
-                self.log_loss = tf.summary.scalar('loss', self.loss)
+                self.log_loss = tf.summary.scalar('loss', tf.reduce_sum(self.loss))
                 #print(self.loss)
 
 
-                #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss, self.log_loss])
-                self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss])
+                self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss, self.log_loss])
+                #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss])
 
                 local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
                 self.gradients = tf.gradients(self.loss, local_vars)
@@ -400,11 +417,20 @@ class Network:
 
 class Environment:
     def __init__(self):
+        global atariEnvFree
         print("Initializing environment...")
+
+        while not atariEnvFree: time.sleep(.01) # NOTE: some weird thing the atari emulator needs to make sure two threads don't simultaneously create an environment
+        atariEnvFree = False
         self.env = gym.make("SpaceInvaders-v0")
+        #self.env = gym.make("Breakout-v0")
+        atariEnvFree = True
         
         self.seqSize = 4
+        self.rawFrameSeq = []
         self.frameSeq = []
+
+        self.actionRepeat = 4
         
         print("Environment initialized")
 
@@ -415,6 +441,11 @@ class Environment:
         self.frameSeq.append(frame)
         self.frameSeq.append(frame)
         self.frameSeq.append(frame)
+        
+        self.rawFrameSeq.append(frame) # TODO: make this based off of self.seqsize
+        self.rawFrameSeq.append(frame)
+        self.rawFrameSeq.append(frame)
+        self.rawFrameSeq.append(frame)
 
         state = np.dstack(self.frameSeq)
         
@@ -428,16 +459,27 @@ class Environment:
 
 
     def act(self, action):
-        observation, reward, terminal, info = self.env.step(action)
-        if terminal: print("TERMINAL STATE REACHED")
 
-        observationFrame = self.preprocessFrame(observation)
-        
-        self.frameSeq.pop(0)
-        self.frameSeq.append(observationFrame)
+        cumulativeReward = 0.0
+        for i in range(self.actionRepeat):
+            observation, reward, terminal, info = self.env.step(action)
+            cumulativeReward += reward
+            observationFrame = self.preprocessFrame(observation)
+            
+            self.rawFrameSeq.pop(0)
+            self.rawFrameSeq.append(observationFrame)
+
+            self.frameSeq.pop(0)
+            cleanedFrame = np.maximum(self.rawFrameSeq[-1], self.rawFrameSeq[-2])
+            self.frameSeq.append(cleanedFrame)
+            
+            if terminal: 
+                print("TERMINAL STATE REACHED")
+                break
+            
         state = np.dstack(self.frameSeq)
         
-        return state, reward, terminal
+        return state, cumulativeReward, terminal
 
 
 
