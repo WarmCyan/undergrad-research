@@ -41,37 +41,39 @@ def discount(x, gamma):
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
 
 
+# globals NOTE: caution!
 atariEnvFree = True
+T = 0
 
 
 # hyperparameters
 GAME = "SpaceInvaders-v0"
 ACTION_SIZE = 6
+ACTION_REPEAT = 4
+STATE_FRAME_COUNT = 4
 
 LEARNING_RATE = .0001
 NUM_WORKERS = 16
 
+t_MAX = 5
+T_MAX = 10000 # (epoch training steps)
+
+GAMMA = .99
 
 
 class Manager:
 
     def __init__(self):
 
-        self.actionSpaceSize = 6
-
-        self.learningRate = .0001
-        
-        self.optimizer = tf.train.AdamOptimizer(self.learningRate)
+        self.optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
         self.globalNetwork = Network('global', self.optimizer)
-        self.globalNetwork.buildGraph(self.actionSpaceSize)
+        self.globalNetwork.buildGraph()
         
-        #self.numWorkers = multiprocessing.cpu_count()
-        #self.numWorkers = 16 # NOTE: manual thread count override
-        print("Number of threads: ", self.numWorkers)
+        print("Number of threads: ", NUM_WORKERS)
         self.workers = []
 
-        for i in range(self.numWorkers):
-            self.workers.append(Worker("worker_" + str(i), self.optimizer, self.actionSpaceSize))
+        for i in range(NUM_WORKERS):
+            self.workers.append(Worker("worker_" + str(i), self.optimizer))
 
 
     def run(self):
@@ -122,18 +124,14 @@ class Manager:
 
 class Worker:
 
-    def __init__(self, name, optimizer, actionSpaceSize):
+    def __init__(self, name, optimizer):
         self.name = name
         #self.optimizer = optimizer
         
         self.network = Network(self.name, optimizer)
-        self.network.buildGraph(actionSpaceSize)
+        self.network.buildGraph()
 
         self.resetWeights = getWeightChangeOps("global", self.name)
-
-        #self.t_max = 30
-        self.t_max = 5
-        self.GAMMA = .99
 
         print("Worker",self.name,"initialized...")
 
@@ -149,7 +147,7 @@ class Worker:
         values = np.asarray(values.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
         #rewards = np.asarray(rewards.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
         #print("rewards:",rewards.shape)
-        discountedRewards = discount(rewards, self.GAMMA)
+        discountedRewards = discount(rewards, GAMMA)
         #print(discountedRewards)
         #print("rewards:",rewards.shape)
         #print("values:",values[1:].shape)
@@ -160,11 +158,11 @@ class Worker:
         # A = r + yV(s') - V(S)
         #print("values:",values[1:].shape)
         #print("values:",values[:-1].shape)
-        advantages = rewards + self.GAMMA*values[1:] - values[:-1]
+        advantages = rewards + GAMMA*values[1:] - values[:-1]
         #print("advnatages:",advantages.shape)
 
         # TODO: supposedly we have to discount advantages, I don't know if that is correct or not (shouldn't we just use discounted rewards?)
-        advantages = discount(advantages, self.GAMMA)
+        advantages = discount(advantages, GAMMA)
 
         #print(history.shape)
         #print(states.shape)
@@ -194,7 +192,8 @@ class Worker:
     
     def work(self, session, coordinator, train_writer):
         t = 0
-        T = 0
+        #T = 0
+        global T
         while not coordinator.should_stop():
 
             # reset ops
@@ -230,8 +229,9 @@ class Worker:
                 s_t = s_t1
 
                 t += 1
+                T += 1
 
-                if t - t_start >= self.t_max:
+                if t - t_start >= t_MAX:
                     summary, p_loss, v_loss = self.train(history, session, v[0,0])
                     train_writer.add_summary(summary, t)
                     #p_loss, v_loss = self.train(history, session, v[0,0], merged_summaries)
@@ -241,7 +241,6 @@ class Worker:
                     session.run(self.resetWeights)
                     
                     
-            T += 1
             
             if len(history) > 0:
                 summary, p_loss, v_loss = self.train(history, session, 0.0)
@@ -250,7 +249,7 @@ class Worker:
 
             #if T == 500: break
             #if T == 100: break
-            if T == 10: break
+            if T > T_MAX: break
 
             #R = 0
             #if not terminal: R = 
@@ -283,7 +282,7 @@ class Network:
         
         
 
-    def buildGraph(self, actionSpaceSize):
+    def buildGraph(self):
         print("Building graph with scope", self.scope)
         with tf.variable_scope(self.scope):
             #self.input = tf.placeholder(tf.float32, shape=(1,84,84,4), name='input') # TODO: pretty sure that shape isn't right
@@ -316,7 +315,7 @@ class Network:
 
             # policy output, policy = distribution of probabilities over actions, use softmax to choose highest probability action
             with tf.name_scope('policy'):
-                self.policy_w = tf.Variable(tf.random_normal([256, actionSpaceSize]), name='policy_w')
+                self.policy_w = tf.Variable(tf.random_normal([256, ACTION_SIZE]), name='policy_w')
                 
                 # TODO: do we need biases as well?
                 self.policy_out = tf.nn.softmax(tf.matmul(self.fc_out, self.policy_w))
@@ -366,7 +365,7 @@ class Network:
                 self.target_v = tf.placeholder(shape=[None], dtype=tf.float32, name='target_v',)
                 self.advantages = tf.placeholder(shape=[None], dtype=tf.float32, name='advantages')
                 
-                self.actions_onehot = tf.one_hot(self.actions, actionSpaceSize, dtype=tf.float32)
+                self.actions_onehot = tf.one_hot(self.actions, ACTION_SIZE, dtype=tf.float32)
                 self.responsible_outputs = tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
                 
                 # losses
@@ -426,12 +425,12 @@ class Environment:
         #self.env = gym.make("Breakout-v0")
         atariEnvFree = True
         
-        self.seqSize = 4
+        self.seqSize = STATE_FRAME_COUNT
         self.rawFrameSeq = []
         self.frameSeq = []
 
-        self.actionRepeat = 4
-        
+        self.finalScore = 0
+
         print("Environment initialized")
 
     def getInitialState(self):
@@ -461,7 +460,7 @@ class Environment:
     def act(self, action):
 
         cumulativeReward = 0.0
-        for i in range(self.actionRepeat):
+        for i in range(ACTION_REPEAT):
             observation, reward, terminal, info = self.env.step(action)
             cumulativeReward += reward
             observationFrame = self.preprocessFrame(observation)
@@ -478,6 +477,8 @@ class Environment:
                 break
             
         state = np.dstack(self.frameSeq)
+        
+        self.finalScore += cumulativeReward
         
         return state, cumulativeReward, terminal
 
