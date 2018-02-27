@@ -56,7 +56,8 @@ LEARNING_RATE = .0001
 NUM_WORKERS = 16
 
 t_MAX = 5
-T_MAX = 10000 # (epoch training steps)
+#T_MAX = 10000 # (epoch training steps)
+T_MAX = 1000 # (epoch training steps)
 
 GAMMA = .99
 
@@ -68,57 +69,100 @@ class Manager:
         self.optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
         self.globalNetwork = Network('global', self.optimizer)
         self.globalNetwork.buildGraph()
+        merged_summaries = tf.summary.merge_all()
+        with tf.Session() as sess:
+            self.train_writer = tf.summary.FileWriter('../tensorboard_data/a3c_' + GAME, sess.graph)
         
+        
+    def buildWorkers(self):
         print("Number of threads: ", NUM_WORKERS)
         self.workers = []
-
         for i in range(NUM_WORKERS):
             self.workers.append(Worker("worker_" + str(i), self.optimizer))
 
 
-    def run(self):
+    def runEpoch(self, epochNum):
         with tf.Session() as sess:
             coordinator = tf.train.Coordinator()
             sess.run(tf.global_variables_initializer())
         
             # logging things
-            merged_summaries = tf.summary.merge_all()
-            train_writer = tf.summary.FileWriter('../tensorboard_data/a3c_full' , sess.graph)
 
             # create worker threads
             worker_threads = []
             for worker in self.workers:
-                worker_function = lambda: worker.work(sess, coordinator, train_writer)
+                worker_function = lambda: worker.work(sess, coordinator, self.train_writer)
                 t = threading.Thread(target=worker_function)
                 t.start()
                 worker_threads.append(t)
                 
-            train_writer.add_graph(sess.graph)
+            self.train_writer.add_graph(sess.graph)
 
             coordinator.join(worker_threads)
+        
+    def testGlobal(self, epochNum):
+        with tf.Session() as sess:
+            e = Environment()
+            e.env = gym.wrappers.Monitor(e.env, './runs/epoch_' + str(epochNum), force=True)
+            state = e.getInitialState()
+            terminal = False
+            while not terminal:
+                policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
+                action = np.argmax(policyVec)
+                state, reward, terminal = e.act(action)
 
-            subprocess.call(['notify-send', "A3C training completed!"])
 
-            exit = False
-            user = input("type exit to quit, or anything else to run: ")
-            if user == "exit": exit = True
-            
-            while not exit:
-                # test it!
-                e = Environment()
-                e.env = gym.wrappers.Monitor(e.env, './tmp/testing', force=True)
-                state = e.getInitialState()
-                terminal = False
-                while not terminal:
-                    policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
-                    action = np.argmax(policyVec)
+            score_log = sess.run([self.globalNetwork.score_log], feed_dict={self.globalNetwork.score: e.finalScore})
+            self.train_writer.add_summary(score_log, epochNum)
 
-                    e.env.render()
-                    state, reward, terminal = e.act(action)
+    def run(self):
+        #with tf.Session() as sess:
+            #coordinator = tf.train.Coordinator()
+            #sess.run(tf.global_variables_initializer())
+        
+            # logging things
+            #merged_summaries = tf.summary.merge_all()
+            #train_writer = tf.summary.FileWriter('../tensorboard_data/a3c_full' , sess.graph)
+
+            # create worker threads
+            #worker_threads = []
+            #for worker in self.workers:
+                #worker_function = lambda: worker.work(sess, coordinator, train_writer)
+                #t = threading.Thread(target=worker_function)
+                #t.start()
+                #worker_threads.append(t)
                 
-                e.env.render()
-                user = input("type exit to quit, or anything else to run: ")
-                if user == "exit": exit = True
+            #train_writer.add_graph(sess.graph)
+
+            #coordinator.join(worker_threads)
+
+            num = 0
+            self.buildWorkers()
+            self.runEpoch(num)
+            self.testGlobal(num)
+            #subprocess.call(['notify-send', "A3C training completed!"])
+            subprocess.call(['notify-send', "Epoch " + str(num) + " complete"])
+
+
+            #exit = False
+            #user = input("type exit to quit, or anything else to run: ")
+            #if user == "exit": exit = True
+            
+            #while not exit:
+                ## test it!
+                #e = Environment()
+                #e.env = gym.wrappers.Monitor(e.env, './tmp/testing', force=True)
+                #state = e.getInitialState()
+                #terminal = False
+                #while not terminal:
+                    #policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
+                    #action = np.argmax(policyVec)
+#
+                    #e.env.render()
+                    #state, reward, terminal = e.act(action)
+                #
+                #user = input("type exit to quit, or anything else to run: ")
+                #if user == "exit": exit = True
  
             
 
@@ -399,6 +443,8 @@ class Network:
 
 
             if self.scope == 'global':
+                self.score = tf.placeholder(shape=[1], dtype=tf.int32, name='score')
+                self.log_score = tf.summary.scalar('score', self.score)
                 pass
                 #self.merged_summaries = tf.summary.merge_all()
                 #self.sess.run(tf.global_variables_initializer())
