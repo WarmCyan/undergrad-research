@@ -53,13 +53,16 @@ ACTION_REPEAT = 4
 STATE_FRAME_COUNT = 4
 
 LEARNING_RATE = .0001
-NUM_WORKERS = 16
+#NUM_WORKERS = 16
+NUM_WORKERS = 3
 
 t_MAX = 5
 #T_MAX = 10000 # (epoch training steps)
-T_MAX = 1000 # (epoch training steps)
+T_MAX = 100 # (epoch training steps)
 
 GAMMA = .99
+
+TEST_RUN_COUNT = 10
 
 
 class Manager:
@@ -102,18 +105,28 @@ class Manager:
         
     def testGlobal(self, epochNum):
         with tf.Session() as sess:
-            e = Environment()
-            e.env = gym.wrappers.Monitor(e.env, './runs/epoch_' + str(epochNum), force=True)
-            state = e.getInitialState()
-            terminal = False
-            while not terminal:
-                policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
-                action = np.argmax(policyVec)
-                state, reward, terminal = e.act(action)
+            sess.run(tf.global_variables_initializer())
+
+            scores = []
+
+            for i in range(TEST_RUN_COUNT):
+                e = Environment()
+                e.env = gym.wrappers.Monitor(e.env, './runs/epoch_' + str(epochNum), force=True)
+                state = e.getInitialState()
+                terminal = False
+                while not terminal:
+                    policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
+                    action = np.argmax(policyVec)
+                    state, reward, terminal = e.act(action)
 
 
-            score_log = sess.run([self.globalNetwork.score_log], feed_dict={self.globalNetwork.score: e.finalScore})
-            self.train_writer.add_summary(score_log, epochNum)
+                print("FINAL SCORE:",e.finalScore)
+                scores.append(e.finalScore)
+                
+            avgScore = np.average(scores)
+            
+            score_log = sess.run([self.globalNetwork.log_score], feed_dict={self.globalNetwork.score: [avgScore]})
+            self.train_writer.add_summary(score_log[0], epochNum)
 
     def run(self):
         #with tf.Session() as sess:
@@ -443,9 +456,8 @@ class Network:
 
 
             if self.scope == 'global':
-                self.score = tf.placeholder(shape=[1], dtype=tf.int32, name='score')
-                self.log_score = tf.summary.scalar('score', self.score)
-                pass
+                self.score = tf.placeholder(shape=[1], dtype=tf.float32, name='score')
+                self.log_score = tf.summary.scalar('score', tf.reduce_sum(self.score))
                 #self.merged_summaries = tf.summary.merge_all()
                 #self.sess.run(tf.global_variables_initializer())
                 
