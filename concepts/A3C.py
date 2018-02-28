@@ -54,7 +54,7 @@ STATE_FRAME_COUNT = 4
 
 LEARNING_RATE = .0001
 #NUM_WORKERS = 16
-NUM_WORKERS = 3
+NUM_WORKERS = 4
 
 t_MAX = 5
 #T_MAX = 10000 # (epoch training steps)
@@ -63,6 +63,8 @@ T_MAX = 100 # (epoch training steps)
 GAMMA = .99
 
 TEST_RUN_COUNT = 10
+
+EPOCHS = 5
 
 
 class Manager:
@@ -102,6 +104,23 @@ class Manager:
             self.train_writer.add_graph(sess.graph)
 
             coordinator.join(worker_threads)
+
+    def singleTestRun(self, epochNum, render=False):
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            e = Environment()
+            if render: e.env = gym.wrappers.Monitor(e.env, './runs/epoch_' + str(epochNum), force=True)
+            state = e.getInitialState()
+            terminal = False
+            while not terminal:
+                policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
+                action = np.argmax(policyVec)
+                state, reward, terminal = e.act(action)
+                    
+        print("FINAL SCORE:",e.finalScore)
+        return e.finalScore
+
+                    
         
     def testGlobal(self, epochNum):
         with tf.Session() as sess:
@@ -110,22 +129,14 @@ class Manager:
             scores = []
 
             for i in range(TEST_RUN_COUNT):
-                e = Environment()
-                e.env = gym.wrappers.Monitor(e.env, './runs/epoch_' + str(epochNum), force=True)
-                state = e.getInitialState()
-                terminal = False
-                while not terminal:
-                    policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
-                    action = np.argmax(policyVec)
-                    state, reward, terminal = e.act(action)
-
-
-                print("FINAL SCORE:",e.finalScore)
-                scores.append(e.finalScore)
+                #score = self.singleTestRun()
+                if i == 0: score = self.singleTestRun(epochNum, True)
+                else: score = self.singleTestRun(epochNum)
+                scores.append(score)
                 
-            avgScore = np.average(scores)
+            #avgScore = np.average(scores)
             
-            score_log = sess.run([self.globalNetwork.log_score], feed_dict={self.globalNetwork.score: [avgScore]})
+            score_log = sess.run([self.globalNetwork.log_score], feed_dict={self.globalNetwork.score: scores})
             self.train_writer.add_summary(score_log[0], epochNum)
 
     def run(self):
@@ -149,12 +160,12 @@ class Manager:
 
             #coordinator.join(worker_threads)
 
-            num = 0
             self.buildWorkers()
-            self.runEpoch(num)
-            self.testGlobal(num)
-            #subprocess.call(['notify-send', "A3C training completed!"])
-            subprocess.call(['notify-send', "Epoch " + str(num) + " complete"])
+            for i in range(EPOCHS):
+                self.runEpoch(i)
+                self.testGlobal(i)
+                #subprocess.call(['notify-send', "A3C training completed!"])
+                subprocess.call(['notify-send', "Epoch " + str(i) + " complete"])
 
 
             #exit = False
@@ -456,8 +467,11 @@ class Network:
 
 
             if self.scope == 'global':
-                self.score = tf.placeholder(shape=[1], dtype=tf.float32, name='score')
-                self.log_score = tf.summary.scalar('score', tf.reduce_sum(self.score))
+                self.score = tf.placeholder(shape=[None], dtype=tf.float32, name='score')
+                self.log_score_avg = tf.summary.scalar('score_avg', tf.reduce_mean(self.score))
+                self.log_score_min = tf.summary.scalar('score_min', tf.reduce_min(self.score))
+                self.log_score_max = tf.summary.scalar('score_max', tf.reduce_max(self.score))
+                self.log_score = tf.summary.merge([self.log_score_avg, self.log_score_min, self.log_score_max])
                 #self.merged_summaries = tf.summary.merge_all()
                 #self.sess.run(tf.global_variables_initializer())
                 
