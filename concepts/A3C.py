@@ -64,7 +64,7 @@ GAMMA = .99
 
 TEST_RUN_COUNT = 10
 
-EPOCHS = 10
+EPOCHS = 100
 
 
 class Manager:
@@ -161,13 +161,13 @@ class Manager:
 
             #coordinator.join(worker_threads)
 
-            self.buildWorkers()
-            for i in range(EPOCHS):
-                T = 0
-                self.runEpoch(i)
-                self.testGlobal(i)
-                #subprocess.call(['notify-send', "A3C training completed!"])
-                subprocess.call(['notify-send', "Epoch " + str(i) + " complete"])
+        self.buildWorkers()
+        for i in range(EPOCHS):
+            T = 0
+            self.runEpoch(i)
+            self.testGlobal(i)
+            #subprocess.call(['notify-send', "A3C training completed!"])
+            subprocess.call(['notify-send', "Epoch " + str(i) + " complete"])
 
 
             #exit = False
