@@ -53,18 +53,18 @@ ACTION_REPEAT = 4
 STATE_FRAME_COUNT = 4
 
 LEARNING_RATE = .0001
-#NUM_WORKERS = 16
-NUM_WORKERS = 4
+NUM_WORKERS = 16
+#NUM_WORKERS = 4
 
 t_MAX = 5
-#T_MAX = 10000 # (epoch training steps)
-T_MAX = 100 # (epoch training steps)
+T_MAX = 10000 # (epoch training steps)
+#T_MAX = 1000 # (epoch training steps)
 
 GAMMA = .99
 
 TEST_RUN_COUNT = 10
 
-EPOCHS = 5
+EPOCHS = 10
 
 
 class Manager:
@@ -140,6 +140,7 @@ class Manager:
             self.train_writer.add_summary(score_log[0], epochNum)
 
     def run(self):
+        global T
         #with tf.Session() as sess:
             #coordinator = tf.train.Coordinator()
             #sess.run(tf.global_variables_initializer())
@@ -162,6 +163,7 @@ class Manager:
 
             self.buildWorkers()
             for i in range(EPOCHS):
+                T = 0
                 self.runEpoch(i)
                 self.testGlobal(i)
                 #subprocess.call(['notify-send', "A3C training completed!"])
