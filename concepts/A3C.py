@@ -159,6 +159,8 @@ class Worker:
     def __init__(self, name, optimizer):
         self.name = name
         #self.optimizer = optimizer
+
+        self.index = 0
         
         self.network = Network(self.name, optimizer)
         self.network.buildGraph()
@@ -260,7 +262,8 @@ class Worker:
 
                 if t - t_start >= t_MAX:
                     summary, p_loss, v_loss = self.train(history, session, v[0,0])
-                    train_writer.add_summary(summary, t)
+                    self.index += 1
+                    train_writer.add_summary(summary, self.index)
                     #p_loss, v_loss = self.train(history, session, v[0,0], merged_summaries)
                     print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
                     history = []
