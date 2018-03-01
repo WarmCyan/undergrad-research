@@ -357,7 +357,7 @@ class Network:
                 #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss])
 
                 local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
-                #self.gradients = tf.gradients(self.loss, local_vars)
+                self.gradients = tf.gradients(self.loss, local_vars)
                 #self.var_norms = tf.global_norm(local_vars)
                 #self.clipped_gradients, self.gradient_norms = tf.clip_by_global_norm(self.gradients, 40.0) # TODO: where is 40 coming from???
                 
