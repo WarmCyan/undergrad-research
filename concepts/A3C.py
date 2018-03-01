@@ -45,18 +45,20 @@ def discount(x, gamma):
 # globals NOTE: caution!
 atariEnvFree = True
 T = 0
+global_net = None
 
 
 # hyperparameters
 GAME = "SpaceInvaders-v0"
 ACTION_SIZE = 6
 
-ACTION_REPEAT = 4
+ACTION_REPEAT = 1
 STATE_FRAME_COUNT = 4
 
-LEARNING_RATE = .0001
-NUM_WORKERS = 16
-#NUM_WORKERS = 1
+#LEARNING_RATE = .0001
+LEARNING_RATE = .1
+#NUM_WORKERS = 16
+NUM_WORKERS = 1
 
 
 t_MAX = 5
@@ -75,13 +77,15 @@ EPOCHS = 100
 class Manager:
 
     def __init__(self):
+        global global_net
 
         self.optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
         self.globalNetwork = Network('global', self.optimizer)
         self.globalNetwork.buildGraph()
+        global_net = self.globalNetwork
         merged_summaries = tf.summary.merge_all()
-        with tf.Session() as sess:
-            self.train_writer = tf.summary.FileWriter('../tensorboard_data/a3c_' + GAME, sess.graph)
+        self.session = tf.Session()
+        self.train_writer = tf.summary.FileWriter('../tensorboard_data/a3c_' + GAME, self.session.graph)
         
         
     def buildWorkers(self):
@@ -89,38 +93,37 @@ class Manager:
         self.workers = []
         for i in range(NUM_WORKERS):
             self.workers.append(Worker("worker_" + str(i), self.optimizer))
+        
+        self.session.run(tf.global_variables_initializer())
 
 
     def runEpoch(self, epochNum):
-        with tf.Session() as sess:
-            coordinator = tf.train.Coordinator()
-            sess.run(tf.global_variables_initializer())
-        
-            # logging things
+        coordinator = tf.train.Coordinator()
+        #sess.run(tf.global_variables_initializer())
+    
+        # logging things
 
-            # create worker threads
-            worker_threads = []
-            for worker in self.workers:
-                worker_function = lambda: worker.work(sess, coordinator, self.train_writer)
-                t = threading.Thread(target=worker_function)
-                t.start()
-                worker_threads.append(t)
-                
-            self.train_writer.add_graph(sess.graph)
+        # create worker threads
+        worker_threads = []
+        for worker in self.workers:
+            worker_function = lambda: worker.work(self.session, coordinator, self.train_writer)
+            t = threading.Thread(target=worker_function)
+            t.start()
+            worker_threads.append(t)
+            
+        self.train_writer.add_graph(self.session.graph)
 
-            coordinator.join(worker_threads)
+        coordinator.join(worker_threads)
 
     def singleTestRun(self, epochNum, render=False):
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            e = Environment()
-            if render: e.env = gym.wrappers.Monitor(e.env, './runs/epoch_' + str(epochNum), force=True)
-            state = e.getInitialState()
-            terminal = False
-            while not terminal:
-                policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
-                action = np.argmax(policyVec)
-                state, reward, terminal = e.act(action)
+        e = Environment()
+        if render: e.env = gym.wrappers.Monitor(e.env, './runs/epoch_' + str(epochNum), force=True)
+        state = e.getInitialState()
+        terminal = False
+        while not terminal:
+            policyVec = self.session.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
+            action = np.argmax(policyVec)
+            state, reward, terminal = e.act(action)
                     
         print("FINAL SCORE:",e.finalScore)
         return e.finalScore
@@ -128,21 +131,20 @@ class Manager:
                     
         
     def testGlobal(self, epochNum):
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
+        #sess.run(tf.global_variables_initializer())
 
-            scores = []
+        scores = []
 
-            for i in range(TEST_RUN_COUNT):
-                #score = self.singleTestRun()
-                if i == 0: score = self.singleTestRun(epochNum, True)
-                else: score = self.singleTestRun(epochNum)
-                scores.append(score)
-                
-            #avgScore = np.average(scores)
+        for i in range(TEST_RUN_COUNT):
+            #score = self.singleTestRun()
+            if i == 0: score = self.singleTestRun(epochNum, True)
+            else: score = self.singleTestRun(epochNum)
+            scores.append(score)
             
-            score_log = sess.run([self.globalNetwork.log_score], feed_dict={self.globalNetwork.score: scores})
-            self.train_writer.add_summary(score_log[0], epochNum)
+        #avgScore = np.average(scores)
+        
+        score_log = self.session.run([self.globalNetwork.log_score], feed_dict={self.globalNetwork.score: scores})
+        self.train_writer.add_summary(score_log[0], epochNum)
 
     def run(self):
         global T
@@ -177,12 +179,18 @@ class Worker:
         rewards = history[:,2]
         states_next = history[:,3]
         values = history[:,4]
+        #print("Passed rewards:", rewards)
+        #print("Passed values:", values)
 
 
         values = np.asarray(values.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
+        #print("########### VALUES ###############")
+        #print(values)
         #rewards = np.asarray(rewards.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
         #print("rewards:",rewards.shape)
         discountedRewards = discount(rewards, GAMMA)
+        print("########### REWARDS ############### (target_v)")
+        print(discountedRewards)
         #print(discountedRewards)
         #print("rewards:",rewards.shape)
         #print("values:",values[1:].shape)
@@ -197,7 +205,7 @@ class Worker:
         #print("advnatages:",advantages.shape)
 
         # TODO: supposedly we have to discount advantages, I don't know if that is correct or not (shouldn't we just use discounted rewards?)
-        advantages = discount(advantages, GAMMA)
+        #advantages = discount(advantages, GAMMA) # NOTE: wasn't previously commented out
 
         #print(history.shape)
         #print(states.shape)
@@ -210,7 +218,19 @@ class Worker:
 
 
         # apply gradients to global network
-        summary, p_loss, v_loss, _ = session.run([self.network.log_op, self.network.policy_loss, self.network.value_loss, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
+        summary, p_loss, v_loss, val, test, _ = session.run([self.network.log_op, self.network.policy_loss, self.network.value_loss, self.network.value_out, self.network.intermediate_test, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
+
+        print("intermediate:")
+        print(test)
+
+        #print("val_out:")
+        #print(val)
+        
+        # NOTE: this is the actual one
+        #summary, p_loss, v_loss, _ = session.run([self.network.log_op, self.network.policy_loss, self.network.value_loss, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
+
+
+        
         #p_loss, v_loss, _ = session.run([self.network.policy_loss, self.network.value_loss, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
         #p_loss, v_loss = session.run([self.network.policy_loss, self.network.value_loss], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
 
@@ -227,7 +247,7 @@ class Worker:
         while not coordinator.should_stop():
 
             # reset ops
-            session.run(self.resetWeights)
+            #session.run(self.resetWeights)
 
             # get an environment instance
             #time.sleep(random.uniform(0.0,0.5))
@@ -247,6 +267,8 @@ class Worker:
                 policyVec, v = session.run([self.network.policy_out, self.network.value_out], feed_dict={self.network.input: [s_t]})
                 a_t = np.argmax(policyVec)
 
+                #print(self.name," - value prediction - ",v[0])
+
                 #if self.name == "worker_0":
                     #self.env.env.render()
 
@@ -262,7 +284,21 @@ class Worker:
                 t += 1
                 T += 1
 
-                if terminal or t - t_start < t_MAX:
+                if terminal or t - t_start >= t_MAX:
+                    print("====================================== training")
+                    
+                    states = np.array(history)[:,0]
+                    states = np.asarray(states)
+                    states = np.stack(states, 0)
+                    #weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
+                    #print("Old weights:")
+                    #print(weights)
+
+                    vals_old = session.run([self.network.value_out], feed_dict={self.network.input: states})
+                    print("old values:")
+                    print(vals_old)
+
+                    
                     R = 0.0
                     if not terminal: R = session.run([self.network.value_out], feed_dict={self.network.input:[s_t]})[0]
                     summary, p_loss, v_loss = self.train(history, session, R)
@@ -270,10 +306,22 @@ class Worker:
                     train_writer.add_summary(summary, self.index)
                     #p_loss, v_loss = self.train(history, session, 0.0, merged_summaries)
                     print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
+
+                    #session.run(self.resetWeights)
+
                     
-                    session.run(self.resetWeights)
+                    vals_new = session.run([self.network.value_out], feed_dict={self.network.input: states})
+                    
+                    #weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
+                    #print("New weights:")
+                    #print(weights)
+
+                    print("updated values:")
+                    print(vals_new)
+                    
                     history = []
                     t_start = t
+                    print("-------------------------------------- /training")
 
             if T > T_MAX: break
 
@@ -297,6 +345,9 @@ class Network:
                 self.conv1 = tf.nn.conv2d(self.input, self.w1, [1, 4, 4, 1], "VALID", name='conv1') 
                 self.conv1_relu = tf.nn.relu(tf.nn.bias_add(self.conv1, self.b1))
                 
+                self.log_w1 = tf.summary.histogram('w1', self.w1)
+                
+                
             # 32 filters, kernel size of 4, stride of 2
             with tf.name_scope('conv2'):
                 self.w2 = tf.Variable(tf.random_normal([4, 4, 16, 32]), name='weights2')
@@ -307,6 +358,8 @@ class Network:
                 # flattened size is 9*9*32 = 2592
                 self.conv2_out = tf.reshape(self.conv2_relu, [-1, 2592], name='conv2_flatten') 
                 
+                self.log_w2 = tf.summary.histogram('w2', self.w2)
+                
 
             # fully connected layer with 256 hidden units
             with tf.name_scope('fully_connected'):
@@ -314,6 +367,8 @@ class Network:
                 self.fc_b = tf.Variable(tf.random_normal([256]), name='fc_biases') # fully connected biases
 
                 self.fc_out = tf.nn.relu_layer(self.conv2_out, self.fc_w, self.fc_b, name='fc_out')
+
+                self.log_fc_w = tf.summary.histogram('fc_w', self.fc_w)
 
             # policy output, policy = distribution of probabilities over actions, use softmax to choose highest probability action
             with tf.name_scope('policy'):
@@ -325,10 +380,13 @@ class Network:
             # Only a SINGLE output, just a single linear value
             with tf.name_scope('value'):
                 self.value_w = tf.Variable(tf.random_normal([256, 1]), name='value_w')
+                #self.value_w = tf.Variable(tf.zeros([256, 1]), name='value_w')
 
                 # TODO: do we need a bias for this? (edit: I'm pretty sure since it's a single linear value, there's no point in having a bias value?)
 
                 self.value_out = tf.matmul(self.fc_out, self.value_w)
+
+                self.log_value_w = tf.summary.histogram('value_w', self.value_w)
 
 
             if self.scope != 'global':
@@ -341,13 +399,17 @@ class Network:
                 
                 # losses
                 # NOTE: .5's seem arbitrary, these should be set as hyperparameters
-                self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value_out, [-1])))
+                #self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value_out, [-1])))
+                self.intermediate_test = self.target_v - tf.squeeze(self.value_out, (None))
+                print(self.target_v.shape,self.value_out.shape)
+                self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - self.value_out))
                 #self.entropy = -tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
                 self.entropy = tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
                 #self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
-                self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*tf.stop_gradient(self.advantages))
+                self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs+1e-10)*tf.stop_gradient(self.advantages))
                 #self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * BETA # NOTE: .01 should also be a hyperparameter
-                self.loss = tf.reduce_mean(.5 * self.value_loss + self.policy_loss + self.entropy * BETA) 
+                #self.loss = tf.reduce_mean(.5 * self.value_loss + self.policy_loss + self.entropy * BETA) 
+                self.loss = self.value_loss
 
 
                 # summaries
@@ -357,7 +419,8 @@ class Network:
                 #print(self.loss)
 
 
-                self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss, self.log_loss])
+                #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss, self.log_loss])
+                self.log_op = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w, self.log_value_loss, self.log_policy_loss, self.log_loss])
                 #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss])
 
                 local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
@@ -365,9 +428,10 @@ class Network:
                 #self.var_norms = tf.global_norm(local_vars)
                 #self.clipped_gradients, self.gradient_norms = tf.clip_by_global_norm(self.gradients, 40.0) # TODO: where is 40 coming from???
                 
-                global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
+                #global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
                 #self.apply_gradients = self.optimizer.apply_gradients(zip(self.clipped_gradients, global_vars))
-                self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, global_vars))
+                #self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, global_vars))
+                self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, local_vars))
                 
                 
                 
