@@ -49,20 +49,24 @@ T = 0
 # hyperparameters
 GAME = "SpaceInvaders-v0"
 ACTION_SIZE = 6
+
 ACTION_REPEAT = 4
 STATE_FRAME_COUNT = 4
 
 LEARNING_RATE = .0001
 NUM_WORKERS = 16
-#NUM_WORKERS = 4
+#NUM_WORKERS = 1
+
 
 t_MAX = 5
-T_MAX = 10000 # (epoch training steps)
+T_MAX = 40000 # (epoch training steps)
 #T_MAX = 1000 # (epoch training steps)
 
 GAMMA = .99
+BETA = .01
+ALPHA = .99 # rmsprop decay
 
-TEST_RUN_COUNT = 10
+TEST_RUN_COUNT = 5
 
 EPOCHS = 100
 
@@ -71,7 +75,7 @@ class Manager:
 
     def __init__(self):
 
-        self.optimizer = tf.train.AdamOptimizer(LEARNING_RATE)
+        self.optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
         self.globalNetwork = Network('global', self.optimizer)
         self.globalNetwork.buildGraph()
         merged_summaries = tf.summary.merge_all()
@@ -443,7 +447,7 @@ class Network:
                 self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value_out, [-1])))
                 self.entropy = -tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
                 self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
-                self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * .01 # NOTE: .01 should also be a hyperparameter
+                self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * BETA # NOTE: .01 should also be a hyperparameter
 
 
                 # summaries
@@ -544,6 +548,7 @@ class Environment:
 
             self.frameSeq.pop(0)
             cleanedFrame = np.maximum(self.rawFrameSeq[-1], self.rawFrameSeq[-2])
+            #imsave('test.png', cleanedFrame)
             self.frameSeq.append(cleanedFrame)
             
             if terminal: 
