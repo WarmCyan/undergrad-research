@@ -346,7 +346,8 @@ class Network:
                 self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value_out, [-1])))
                 #self.entropy = -tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
                 self.entropy = tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
-                self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
+                #self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
+                self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*tf.stop_gradient(self.advantages))
                 #self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * BETA # NOTE: .01 should also be a hyperparameter
                 self.loss = tf.reduce_mean(.5 * self.value_loss + self.policy_loss + self.entropy * BETA) 
 
