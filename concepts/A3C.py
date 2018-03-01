@@ -242,7 +242,7 @@ class Worker:
             terminal = False
 
             # repeat until terminal state
-            while not terminal and t - t_start < t_MAX:
+            while not terminal:
                 # perform a_t according to policY9a_t|s_t; theta_)
                 policyVec, v = session.run([self.network.policy_out, self.network.value_out], feed_dict={self.network.input: [s_t]})
                 a_t = np.argmax(policyVec)
@@ -253,7 +253,7 @@ class Worker:
                 # receive reward r_t and new state s_{t+1}
                 #a_t = a.act(s_t)
                 s_t1, r_t, terminal = self.env.act(a_t)
-                if (r_t != 0): print(self.name,"got a reward",r_t)
+                if (r_t != 0): print(self.name,"*********************** got a reward",r_t)
 
                 history.append([s_t, a_t, r_t, s_t1, v[0,0]])
 
@@ -262,25 +262,18 @@ class Worker:
                 t += 1
                 T += 1
 
-                #if t - t_start >= t_MAX:
-                    #summary, p_loss, v_loss = self.train(history, session, v[0,0])
-                    #self.index += 1
-                    #train_writer.add_summary(summary, self.index)
-                    ##p_loss, v_loss = self.train(history, session, v[0,0], merged_summaries)
-                    #print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
-                    #history = []
-                    #t_start = t
-                    ##session.run(self.resetWeights)
+                if terminal or t - t_start < t_MAX:
+                    R = 0.0
+                    if not terminal: R = session.run([self.network.value_out], feed_dict={self.network.input:[s_t]})[0]
+                    summary, p_loss, v_loss = self.train(history, session, R)
+                    self.index += 1
+                    train_writer.add_summary(summary, self.index)
+                    #p_loss, v_loss = self.train(history, session, 0.0, merged_summaries)
+                    print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
                     
-            R = 0.0
-            if not terminal: R = session.run([self.network.value_out], feed_dict={self.network.input:[s_t]})[0]
-            
-            if len(history) > 0:
-                summary, p_loss, v_loss = self.train(history, session, R)
-                self.index += 1
-                train_writer.add_summary(summary, self.index)
-                #p_loss, v_loss = self.train(history, session, 0.0, merged_summaries)
-                print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
+                    session.run(self.resetWeights)
+                    history = []
+                    t_start = t
 
             if T > T_MAX: break
 
