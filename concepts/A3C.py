@@ -23,6 +23,7 @@ import scipy.signal
 # https://github.com/jaara/AI-blog/blob/master/CartPole-A3C.py
 # https://medium.com/emergent-future/simple-reinforcement-learning-with-tensorflow-part-8-asynchronous-actor-critic-agents-a3c-c88f72a5e9f2 
 # https://medium.com/@henrymao/reinforcement-learning-using-asynchronous-advantage-actor-critic-704147f91686 
+# https://github.com/mrahtz/tensorflow-a3c/blob/master/network.py
 
 
 # returns a set of operations to set all weights of destination scope to values of weights from source scope
@@ -268,7 +269,7 @@ class Worker:
                     print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
                     history = []
                     t_start = t
-                    session.run(self.resetWeights)
+                    #session.run(self.resetWeights)
                     
                     
             
