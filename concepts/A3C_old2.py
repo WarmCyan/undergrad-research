@@ -145,14 +145,56 @@ class Manager:
 
     def run(self):
         global T
+        #with tf.Session() as sess:
+            #coordinator = tf.train.Coordinator()
+            #sess.run(tf.global_variables_initializer())
+        
+            # logging things
+            #merged_summaries = tf.summary.merge_all()
+            #train_writer = tf.summary.FileWriter('../tensorboard_data/a3c_full' , sess.graph)
+
+            # create worker threads
+            #worker_threads = []
+            #for worker in self.workers:
+                #worker_function = lambda: worker.work(sess, coordinator, train_writer)
+                #t = threading.Thread(target=worker_function)
+                #t.start()
+                #worker_threads.append(t)
+                
+            #train_writer.add_graph(sess.graph)
+
+            #coordinator.join(worker_threads)
 
         self.buildWorkers()
         for i in range(EPOCHS):
             T = 0
             self.runEpoch(i)
             self.testGlobal(i)
+            #subprocess.call(['notify-send', "A3C training completed!"])
             subprocess.call(['notify-send', "Epoch " + str(i) + " complete"])
 
+
+            #exit = False
+            #user = input("type exit to quit, or anything else to run: ")
+            #if user == "exit": exit = True
+            
+            #while not exit:
+                ## test it!
+                #e = Environment()
+                #e.env = gym.wrappers.Monitor(e.env, './tmp/testing', force=True)
+                #state = e.getInitialState()
+                #terminal = False
+                #while not terminal:
+                    #policyVec = sess.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
+                    #action = np.argmax(policyVec)
+#
+                    #e.env.render()
+                    #state, reward, terminal = e.act(action)
+                #
+                #user = input("type exit to quit, or anything else to run: ")
+                #if user == "exit": exit = True
+ 
+            
 
 class Worker:
 
@@ -215,6 +257,11 @@ class Worker:
         return summary, p_loss, v_loss
         #return p_loss, v_loss
 
+
+        
+
+        
+        
         
     
     def work(self, session, coordinator, train_writer):
@@ -274,7 +321,33 @@ class Worker:
                 #p_loss, v_loss = self.train(history, session, 0.0, merged_summaries)
                 print("Policy loss:",p_loss,"Value loss:",v_loss)
 
+            #if T == 500: break
+            #if T == 100: break
             if T > T_MAX: break
+
+            #R = 0
+            #if not terminal: R = 
+
+
+            #for i in range(0, t):
+                #transition = history[i - t_start]
+                #s_i = transition[0]
+                #a_i = transition[1]
+                #r_i = transition[2]
+
+                #R = r_i + self.GAMMA*R
+
+            
+                
+                
+                
+            
+            
+    
+
+    
+    
+
 
 class Network:
     def __init__(self, scope, optimizer):
@@ -320,6 +393,9 @@ class Network:
                 
                 # TODO: do we need biases as well?
                 self.policy_out = tf.nn.softmax(tf.matmul(self.fc_out, self.policy_w))
+                
+                ## NOTE: used for gradient calculations
+                #self.policy_log_prob = tf.log(self.policy_out)
 
             # Only a SINGLE output, just a single linear value
             with tf.name_scope('value'):
@@ -329,6 +405,34 @@ class Network:
 
                 self.value_out = tf.matmul(self.fc_out, self.value_w)
 
+
+
+            # policy gradient calculation
+            #self.R = tf.placeholder(tf.float32, shape=(1), name='reward_input')
+
+            #self.entropy = tf.reduce_sum(self.policy_out * self.policy_log_prob, name='entropy')
+            
+            #with tf.name_scope('advantage'):
+                #self.A = self.R - self.value_out
+
+            #with tf.name_scope("policy_loss"):
+                #self.policy_loss = self.policy_log_prob*self.A # NOTE: the graph of this doesn't look right...the mul term doesn't go into the gradient at all, is that correct?
+                #self.dtheta_ = tf.gradients(self.policy_gradient_term, [self.policy_w, self.fc_w, self.w2, self.w1]) # TODO: no idea if this is correct at all
+
+            # TODO: add an entropy term to the gradient
+
+
+            #with tf.name_scope('value_loss'):
+                #self.value_loss = tf.square(self.A)
+                #self.dtheta_v_ = tf.gradients(self.A, [self.value_w]) # TODO: does this still apply to all weights or only value weights?
+                
+
+            #with tf.name_scope("objective"):
+                #self.full_objective = self.policy_loss + self.value_loss_weight*self.value_loss + self.entropy*self.BETA
+                #localvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) # TODO: eventually need a scope variable passed in as well I think? (once go to multithreading)
+                #self.gradients = tf.gradients(self.full_objective, localvars)
+
+                # TODO: still doesn't look right, the full_objective stuff doesn't actually lead into the gradients variable??
 
             if self.scope != 'global':
                 self.actions = tf.placeholder(shape=[None], dtype=tf.int32, name='actions')
@@ -357,13 +461,12 @@ class Network:
                 #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss])
 
                 local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
-                #self.gradients = tf.gradients(self.loss, local_vars)
-                #self.var_norms = tf.global_norm(local_vars)
-                #self.clipped_gradients, self.gradient_norms = tf.clip_by_global_norm(self.gradients, 40.0) # TODO: where is 40 coming from???
+                self.gradients = tf.gradients(self.loss, local_vars)
+                self.var_norms = tf.global_norm(local_vars)
+                self.clipped_gradients, self.gradient_norms = tf.clip_by_global_norm(self.gradients, 40.0) # TODO: where is 40 coming from???
                 
                 global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
-                #self.apply_gradients = self.optimizer.apply_gradients(zip(self.clipped_gradients, global_vars))
-                self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, global_vars))
+                self.apply_gradients = self.optimizer.apply_gradients(zip(self.clipped_gradients, global_vars))
                 
                 
                 
