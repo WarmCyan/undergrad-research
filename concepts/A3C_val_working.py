@@ -46,7 +46,6 @@ def discount(x, gamma):
 atariEnvFree = True
 T = 0
 global_net = None
-global_index = 0
 
 
 # hyperparameters
@@ -245,11 +244,10 @@ class Worker:
         t = 0
         #T = 0
         global T
-        global global_index
         while not coordinator.should_stop():
 
             # reset ops
-            session.run(self.resetWeights)
+            #session.run(self.resetWeights)
 
             # get an environment instance
             #time.sleep(random.uniform(0.0,0.5))
@@ -296,9 +294,9 @@ class Worker:
                     #print("Old weights:")
                     #print(weights)
 
-                    #vals_old = session.run([self.network.value_out], feed_dict={self.network.input: states})
-                    #print("old values:")
-                    #print(vals_old)
+                    vals_old = session.run([self.network.value_out], feed_dict={self.network.input: states})
+                    print("old values:")
+                    print(vals_old)
 
                     
                     R = 0.0
@@ -309,15 +307,12 @@ class Worker:
                     #p_loss, v_loss = self.train(history, session, 0.0, merged_summaries)
                     print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
 
-                    session.run(self.resetWeights)
+                    #session.run(self.resetWeights)
 
                     
                     vals_new = session.run([self.network.value_out], feed_dict={self.network.input: states})
                     
-                    weights, global_summary = session.run([global_net.value_w, global_net.log_weights], feed_dict={global_net.input: states})
-                    global_index += 1
-                    train_writer.add_summary(global_summary, global_index)
-                    
+                    #weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
                     #print("New weights:")
                     #print(weights)
 
@@ -393,6 +388,7 @@ class Network:
 
                 self.log_value_w = tf.summary.histogram('value_w', self.value_w)
 
+
             if self.scope != 'global':
                 self.actions = tf.placeholder(shape=[None], dtype=tf.int32, name='actions')
                 self.target_v = tf.placeholder(shape=[None], dtype=tf.float32, name='target_v',)
@@ -447,8 +443,6 @@ class Network:
                 self.log_score_min = tf.summary.scalar('score_min', tf.reduce_min(self.score))
                 self.log_score_max = tf.summary.scalar('score_max', tf.reduce_max(self.score))
                 self.log_score = tf.summary.merge([self.log_score_avg, self.log_score_min, self.log_score_max])
-                
-                self.log_weights = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w])
                 #self.merged_summaries = tf.summary.merge_all()
                 #self.sess.run(tf.global_variables_initializer())
                 
