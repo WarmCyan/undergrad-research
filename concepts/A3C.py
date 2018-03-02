@@ -56,10 +56,10 @@ ACTION_SIZE = 6
 ACTION_REPEAT = 1
 STATE_FRAME_COUNT = 4
 
-#LEARNING_RATE = .0001
-LEARNING_RATE = .1
-#NUM_WORKERS = 16
-NUM_WORKERS = 1
+LEARNING_RATE = .0001
+#LEARNING_RATE = .01
+NUM_WORKERS = 16
+#NUM_WORKERS = 1
 
 
 t_MAX = 5
@@ -190,8 +190,8 @@ class Worker:
         #rewards = np.asarray(rewards.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
         #print("rewards:",rewards.shape)
         discountedRewards = discount(rewards, GAMMA)
-        print("########### REWARDS ############### (target_v)")
-        print(discountedRewards)
+        #print("########### REWARDS ############### (target_v)")
+        #print(discountedRewards)
         #print(discountedRewards)
         #print("rewards:",rewards.shape)
         #print("values:",values[1:].shape)
@@ -221,8 +221,8 @@ class Worker:
         # apply gradients to global network
         summary, p_loss, v_loss, val, test, _ = session.run([self.network.log_op, self.network.policy_loss, self.network.value_loss, self.network.value_out, self.network.intermediate_test, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
 
-        print("intermediate:")
-        print(test)
+        #print("intermediate:")
+        #print(test)
 
         #print("val_out:")
         #print(val)
@@ -277,7 +277,7 @@ class Worker:
                 # receive reward r_t and new state s_{t+1}
                 #a_t = a.act(s_t)
                 s_t1, r_t, terminal = self.env.act(a_t)
-                if (r_t != 0): print(self.name,"*********************** got a reward",r_t)
+                #if (r_t != 0): print(self.name,"*********************** got a reward",r_t)
 
                 history.append([s_t, a_t, r_t, s_t1, v[0,0]])
 
@@ -287,7 +287,7 @@ class Worker:
                 T += 1
 
                 if terminal or t - t_start >= t_MAX:
-                    print("====================================== training")
+                    #print("====================================== training")
                     
                     states = np.array(history)[:,0]
                     states = np.asarray(states)
@@ -314,20 +314,21 @@ class Worker:
                     
                     vals_new = session.run([self.network.value_out], feed_dict={self.network.input: states})
                     
-                    weights, global_summary = session.run([global_net.value_w, global_net.log_weights], feed_dict={global_net.input: states})
-                    global_index += 1
-                    train_writer.add_summary(global_summary, global_index)
                     
                     #print("New weights:")
                     #print(weights)
 
-                    print("updated values:")
-                    print(vals_new)
+                    #print("updated values:")
+                    #print(vals_new)
                     
                     history = []
                     t_start = t
-                    print("-------------------------------------- /training")
+                    #print("-------------------------------------- /training")
 
+            weights, global_summary = session.run([global_net.value_w, global_net.log_weights], feed_dict={global_net.input: states})
+            global_index += 1
+            train_writer.add_summary(global_summary, global_index)
+            
             if T > T_MAX: break
 
 class Network:
@@ -404,16 +405,21 @@ class Network:
                 # losses
                 # NOTE: .5's seem arbitrary, these should be set as hyperparameters
                 #self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value_out, [-1])))
-                self.intermediate_test = self.target_v - tf.squeeze(self.value_out, (None))
+                self.intermediate_test = self.target_v - tf.squeeze(self.value_out, (None)) # TODO: is this still necessary? seems to be minimizing even without
                 print(self.target_v.shape,self.value_out.shape)
                 self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - self.value_out))
                 #self.entropy = -tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
                 self.entropy = tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
                 #self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
-                self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs+1e-10)*tf.stop_gradient(self.advantages))
-                #self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * BETA # NOTE: .01 should also be a hyperparameter
+
+
+                # TODO: do I still really need the stop gradients or not?
+                
+                #self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs+1e-10)*tf.stop_gradient(self.advantages))
+                self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs+1e-10)*self.advantages)
+                self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * BETA 
                 #self.loss = tf.reduce_mean(.5 * self.value_loss + self.policy_loss + self.entropy * BETA) 
-                self.loss = self.value_loss
+                #self.loss = self.value_loss
 
 
                 # summaries
@@ -502,6 +508,7 @@ class Environment:
     def preprocessFrame(self, frame):
         frame = resize(frame, (110,84))
         frame = frame[18:102,0:84]
+        #frame = frame[10:94,0:84]
         frame = rgb2grey(frame)
         return frame
 
