@@ -33,7 +33,8 @@ def getWeightChangeOps(scopeSrc, scopeDest):
 
     assignOps = []
     for srcVar, destVar in zip(srcVars, destVars):
-        assignOps.append(tf.assign(srcVar, destVar))
+        #assignOps.append(tf.assign(srcVar, destVar)) # NOTE: this is freaking backwards!!!!!!
+        assignOps.append(tf.assign(destVar, srcVar))
 
     return assignOps
 
@@ -56,10 +57,10 @@ ACTION_SIZE = 6
 ACTION_REPEAT = 1
 STATE_FRAME_COUNT = 4
 
-LEARNING_RATE = .0001
-#LEARNING_RATE = .01
-NUM_WORKERS = 16
-#NUM_WORKERS = 1
+#LEARNING_RATE = .0001
+LEARNING_RATE = .01
+#NUM_WORKERS = 16
+NUM_WORKERS = 1
 
 
 t_MAX = 5
@@ -72,7 +73,7 @@ ALPHA = .99 # rmsprop decay
 
 TEST_RUN_COUNT = 5
 
-EPOCHS = 100
+EPOCHS = 1000
 
 
 class Manager:
@@ -287,18 +288,27 @@ class Worker:
                 T += 1
 
                 if terminal or t - t_start >= t_MAX:
-                    #print("====================================== training")
+                    print("====================================== training")
                     
                     states = np.array(history)[:,0]
                     states = np.asarray(states)
                     states = np.stack(states, 0)
-                    #weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
+                    
+                    weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
                     #print("Old weights:")
                     #print(weights)
 
                     #vals_old = session.run([self.network.value_out], feed_dict={self.network.input: states})
                     #print("old values:")
                     #print(vals_old)
+                    
+                    global_weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
+                    local_weights = session.run([self.network.value_w], feed_dict={self.network.input: states})
+                    print("----- BEFORE TRAIN -----")
+                    print("Global weights:")
+                    print(global_weights[0][0])
+                    print("Local weights:")
+                    print(local_weights[0][0])
 
                     
                     R = 0.0
@@ -309,10 +319,29 @@ class Worker:
                     #p_loss, v_loss = self.train(history, session, 0.0, merged_summaries)
                     print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
 
+                    global_weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
+                    local_weights = session.run([self.network.value_w], feed_dict={self.network.input: states})
+                    print("----- BEFORE RESET -----")
+                    print("Global weights:")
+                    print(global_weights[0][0])
+                    print("Local weights:")
+                    print(local_weights[0][0])
+                    
                     session.run(self.resetWeights)
 
                     
-                    vals_new = session.run([self.network.value_out], feed_dict={self.network.input: states})
+                    #vals_new = session.run([self.network.value_out], feed_dict={self.network.input: states})
+                    
+                    
+                    global_weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
+                    local_weights = session.run([self.network.value_w], feed_dict={self.network.input: states})
+                    print("----- AFTER RESET -----")
+                    print("Global weights:")
+                    print(global_weights[0][0])
+                    print("Local weights:")
+                    print(local_weights[0][0])
+                    
+
                     
                     
                     #print("New weights:")
@@ -323,7 +352,7 @@ class Worker:
                     
                     history = []
                     t_start = t
-                    #print("-------------------------------------- /training")
+                    print("-------------------------------------- /training")
 
             weights, global_summary = session.run([global_net.value_w, global_net.log_weights], feed_dict={global_net.input: states})
             global_index += 1
@@ -526,7 +555,7 @@ class Environment:
 
             self.frameSeq.pop(0)
             cleanedFrame = np.maximum(self.rawFrameSeq[-1], self.rawFrameSeq[-2])
-            #imsave('test.png', cleanedFrame)
+            imsave('test.png', cleanedFrame)
             self.frameSeq.append(cleanedFrame)
             
             if terminal: 
