@@ -58,9 +58,9 @@ ACTION_REPEAT = 1
 STATE_FRAME_COUNT = 4
 
 #LEARNING_RATE = .0001
-LEARNING_RATE = .01
-#NUM_WORKERS = 16
-NUM_WORKERS = 1
+LEARNING_RATE = .001
+NUM_WORKERS = 16
+#NUM_WORKERS = 1
 
 
 t_MAX = 5
@@ -288,27 +288,20 @@ class Worker:
                 T += 1
 
                 if terminal or t - t_start >= t_MAX:
-                    print("====================================== training")
+                    #print("====================================== training")
                     
                     states = np.array(history)[:,0]
                     states = np.asarray(states)
                     states = np.stack(states, 0)
                     
-                    weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
-                    #print("Old weights:")
-                    #print(weights)
-
-                    #vals_old = session.run([self.network.value_out], feed_dict={self.network.input: states})
-                    #print("old values:")
-                    #print(vals_old)
-                    
-                    global_weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
-                    local_weights = session.run([self.network.value_w], feed_dict={self.network.input: states})
-                    print("----- BEFORE TRAIN -----")
-                    print("Global weights:")
-                    print(global_weights[0][0])
-                    print("Local weights:")
-                    print(local_weights[0][0])
+                    # NOTE: LOGGING
+                    #global_weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
+                    #local_weights = session.run([self.network.value_w], feed_dict={self.network.input: states})
+                    #print("----- BEFORE TRAIN -----")
+                    #print("Global weights:")
+                    #print(global_weights[0][0])
+                    #print("Local weights:")
+                    #print(local_weights[0][0])
 
                     
                     R = 0.0
@@ -319,40 +312,29 @@ class Worker:
                     #p_loss, v_loss = self.train(history, session, 0.0, merged_summaries)
                     print(self.name,"[" + str(T) + "]","- Policy loss:",p_loss,"Value loss:",v_loss)
 
-                    global_weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
-                    local_weights = session.run([self.network.value_w], feed_dict={self.network.input: states})
-                    print("----- BEFORE RESET -----")
-                    print("Global weights:")
-                    print(global_weights[0][0])
-                    print("Local weights:")
-                    print(local_weights[0][0])
+                    # NOTE: LOGGING
+                    #global_weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
+                    #local_weights = session.run([self.network.value_w], feed_dict={self.network.input: states})
+                    #print("----- BEFORE RESET -----")
+                    #print("Global weights:")
+                    #print(global_weights[0][0])
+                    #print("Local weights:")
+                    #print(local_weights[0][0])
                     
                     session.run(self.resetWeights)
 
-                    
-                    #vals_new = session.run([self.network.value_out], feed_dict={self.network.input: states})
-                    
-                    
-                    global_weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
-                    local_weights = session.run([self.network.value_w], feed_dict={self.network.input: states})
-                    print("----- AFTER RESET -----")
-                    print("Global weights:")
-                    print(global_weights[0][0])
-                    print("Local weights:")
-                    print(local_weights[0][0])
-                    
-
-                    
-                    
-                    #print("New weights:")
-                    #print(weights)
-
-                    #print("updated values:")
-                    #print(vals_new)
+                    # NOTE: LOGGING
+                    #global_weights = session.run([global_net.value_w], feed_dict={global_net.input: states})
+                    #local_weights = session.run([self.network.value_w], feed_dict={self.network.input: states})
+                    #print("----- AFTER RESET -----")
+                    #print("Global weights:")
+                    #print(global_weights[0][0])
+                    #print("Local weights:")
+                    #print(local_weights[0][0])
                     
                     history = []
                     t_start = t
-                    print("-------------------------------------- /training")
+                    #print("-------------------------------------- /training")
 
             weights, global_summary = session.run([global_net.value_w, global_net.log_weights], feed_dict={global_net.input: states})
             global_index += 1
@@ -408,9 +390,11 @@ class Network:
             # policy output, policy = distribution of probabilities over actions, use softmax to choose highest probability action
             with tf.name_scope('policy'):
                 self.policy_w = tf.Variable(tf.random_normal([256, ACTION_SIZE]), name='policy_w')
-                
+
                 # TODO: do we need biases as well?
                 self.policy_out = tf.nn.softmax(tf.matmul(self.fc_out, self.policy_w))
+                
+                self.log_policy_w = tf.summary.histogram('policy_w', self.policy_w)
 
             # Only a SINGLE output, just a single linear value
             with tf.name_scope('value'):
@@ -459,7 +443,7 @@ class Network:
 
 
                 #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss, self.log_loss])
-                self.log_op = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w, self.log_value_loss, self.log_policy_loss, self.log_loss])
+                self.log_op = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w, self.log_policy_w, self.log_value_loss, self.log_policy_loss, self.log_loss])
                 #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss])
 
                 local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
@@ -467,10 +451,10 @@ class Network:
                 #self.var_norms = tf.global_norm(local_vars)
                 #self.clipped_gradients, self.gradient_norms = tf.clip_by_global_norm(self.gradients, 40.0) # TODO: where is 40 coming from???
                 
-                #global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
+                global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
                 #self.apply_gradients = self.optimizer.apply_gradients(zip(self.clipped_gradients, global_vars))
-                #self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, global_vars))
-                self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, local_vars))
+                self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, global_vars))
+                #self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, local_vars))
                 
                 
                 
@@ -483,7 +467,7 @@ class Network:
                 self.log_score_max = tf.summary.scalar('score_max', tf.reduce_max(self.score))
                 self.log_score = tf.summary.merge([self.log_score_avg, self.log_score_min, self.log_score_max])
                 
-                self.log_weights = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w])
+                self.log_weights = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w, self.log_policy_w])
                 #self.merged_summaries = tf.summary.merge_all()
                 #self.sess.run(tf.global_variables_initializer())
                 
