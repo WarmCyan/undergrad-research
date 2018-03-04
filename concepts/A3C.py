@@ -24,6 +24,10 @@ import scipy.signal
 # https://medium.com/emergent-future/simple-reinforcement-learning-with-tensorflow-part-8-asynchronous-actor-critic-agents-a3c-c88f72a5e9f2 
 # https://medium.com/@henrymao/reinforcement-learning-using-asynchronous-advantage-actor-critic-704147f91686 
 # https://github.com/mrahtz/tensorflow-a3c/blob/master/network.py
+# https://github.com/openai/universe-starter-agent/blob/master/a3c.py 
+
+
+# https://cgnicholls.github.io/reinforcement-learning/2017/03/27/a3c.html 
 
 
 # returns a set of operations to set all weights of destination scope to values of weights from source scope
@@ -188,9 +192,9 @@ class Worker:
         values = np.asarray(values.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
         #print("########### VALUES ###############")
         #print(values)
-        #rewards = np.asarray(rewards.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
+        rewards_plus = np.asarray(rewards.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
         #print("rewards:",rewards.shape)
-        discountedRewards = discount(rewards, GAMMA)
+        discountedRewards = discount(rewards_plus, GAMMA)[:-1]
         #print("########### REWARDS ############### (target_v)")
         #print(discountedRewards)
         #print(discountedRewards)
@@ -207,7 +211,7 @@ class Worker:
         #print("advnatages:",advantages.shape)
 
         # TODO: supposedly we have to discount advantages, I don't know if that is correct or not (shouldn't we just use discounted rewards?)
-        #advantages = discount(advantages, GAMMA) # NOTE: wasn't previously commented out
+        advantages = discount(advantages, GAMMA) # NOTE: wasn't previously commented out
 
         #print(history.shape)
         #print(states.shape)
@@ -220,7 +224,7 @@ class Worker:
 
 
         # apply gradients to global network
-        summary, p_loss, v_loss, val, test, _ = session.run([self.network.log_op, self.network.policy_loss, self.network.value_loss, self.network.value_out, self.network.intermediate_test, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
+        summary, p_loss, v_loss, val, _ = session.run([self.network.log_op, self.network.policy_loss, self.network.value_loss, self.network.value_out, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
 
         #print("intermediate:")
         #print(test)
@@ -358,7 +362,8 @@ class Network:
             # 16 filters, kernel size of 8, stride of 4
             with tf.name_scope('conv1'):
                 self.w1 = tf.Variable(tf.random_normal([8, 8, 4, 16]), name='weights1')
-                self.b1 = tf.Variable(tf.random_normal([16]), name='bias1')
+                #self.b1 = tf.Variable(tf.random_normal([16]), name='bias1')
+                self.b1 = tf.Variable(tf.zeros([16]), name='bias1')
                 self.conv1 = tf.nn.conv2d(self.input, self.w1, [1, 4, 4, 1], "VALID", name='conv1') 
                 self.conv1_relu = tf.nn.relu(tf.nn.bias_add(self.conv1, self.b1))
                 
@@ -368,7 +373,8 @@ class Network:
             # 32 filters, kernel size of 4, stride of 2
             with tf.name_scope('conv2'):
                 self.w2 = tf.Variable(tf.random_normal([4, 4, 16, 32]), name='weights2')
-                self.b2 = tf.Variable(tf.random_normal([32]), name='bias2')
+                #self.b2 = tf.Variable(tf.random_normal([32]), name='bias2')
+                self.b2 = tf.Variable(tf.zeros([32]), name='bias2')
                 self.conv2 = tf.nn.conv2d(self.conv1_relu, self.w2, [1, 2, 2, 1], "VALID", name='conv2') 
                 self.conv2_relu = tf.nn.relu(tf.nn.bias_add(self.conv2, self.b2))
 
@@ -381,7 +387,8 @@ class Network:
             # fully connected layer with 256 hidden units
             with tf.name_scope('fully_connected'):
                 self.fc_w = tf.Variable(tf.random_normal([2592, 256]), name='fc_weights') 
-                self.fc_b = tf.Variable(tf.random_normal([256]), name='fc_biases') # fully connected biases
+                #self.fc_b = tf.Variable(tf.random_normal([256]), name='fc_biases') # fully connected biases
+                self.fc_b = tf.Variable(tf.zeros([256]), name='fc_biases') # fully connected biases
 
                 self.fc_out = tf.nn.relu_layer(self.conv2_out, self.fc_w, self.fc_b, name='fc_out')
 
@@ -416,13 +423,13 @@ class Network:
                 self.responsible_outputs = tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
                 
                 # losses
-                # NOTE: .5's seem arbitrary, these should be set as hyperparameters
-                #self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value_out, [-1])))
-                self.intermediate_test = self.target_v - tf.squeeze(self.value_out, (None)) # TODO: is this still necessary? seems to be minimizing even without
-                print(self.target_v.shape,self.value_out.shape)
-                self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - self.value_out))
+                self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value_out, [-1])))
+                #print(self.target_v.shape,self.value_out.shape)
+                # NOTE: calclavia's still does the reshape thing, maybe need to add that
+                #self.value_loss = .5 * tf.reduce_sum(tf.square(self.target_v - self.value_out))
                 #self.entropy = -tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
-                self.entropy = tf.reduce_sum(self.policy_out * self.actions_onehot, [1])
+                #self.entropy = -tf.reduce_sum(self.policy_out * self.actions_onehot, [1]) # TODO: sign?
+                self.entropy = -tf.reduce_sum(self.policy_out * tf.log(tf.clip_by_value(self.policy_out, 1e-20, 1.0))) 
                 #self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
 
 
@@ -430,30 +437,34 @@ class Network:
                 
                 #self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs+1e-10)*tf.stop_gradient(self.advantages))
                 self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs+1e-10)*self.advantages)
+                
                 self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * BETA 
                 #self.loss = tf.reduce_mean(.5 * self.value_loss + self.policy_loss + self.entropy * BETA) 
                 #self.loss = self.value_loss
 
 
+
                 # summaries
                 self.log_value_loss = tf.summary.scalar('value_loss', self.value_loss)
                 self.log_policy_loss = tf.summary.scalar('policy_loss', self.policy_loss)
+                self.log_entropy = tf.summary.scalar('entropy', self.entropy)
                 self.log_loss = tf.summary.scalar('loss', tf.reduce_sum(self.loss))
+                self.log_state = tf.summary.image('state', self.input)
                 #print(self.loss)
 
 
                 #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss, self.log_loss])
-                self.log_op = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w, self.log_policy_w, self.log_value_loss, self.log_policy_loss, self.log_loss])
+                self.log_op = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w, self.log_policy_w, self.log_value_loss, self.log_policy_loss, self.log_loss, self.log_entropy, self.log_state])
                 #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss])
 
                 local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
                 self.gradients = tf.gradients(self.loss, local_vars)
-                #self.var_norms = tf.global_norm(local_vars)
-                #self.clipped_gradients, self.gradient_norms = tf.clip_by_global_norm(self.gradients, 40.0) # TODO: where is 40 coming from???
+                self.var_norms = tf.global_norm(local_vars)
+                self.clipped_gradients, self.gradient_norms = tf.clip_by_global_norm(self.gradients, 40.0) # TODO: where is 40 coming from???
                 
                 global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
-                #self.apply_gradients = self.optimizer.apply_gradients(zip(self.clipped_gradients, global_vars))
-                self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, global_vars))
+                self.apply_gradients = self.optimizer.apply_gradients(zip(self.clipped_gradients, global_vars))
+                #self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, global_vars))
                 #self.apply_gradients = self.optimizer.apply_gradients(zip(self.gradients, local_vars))
                 
                 
@@ -519,8 +530,10 @@ class Environment:
         return state
 
     def preprocessFrame(self, frame):
-        frame = resize(frame, (110,84))
-        frame = frame[18:102,0:84]
+        #frame = resize(frame, (110,84))
+        frame = resize(frame, (94,84))
+        #frame = frame[18:102,0:84]
+        frame = frame[4:88,0:84]
         #frame = frame[10:94,0:84]
         frame = rgb2grey(frame)
         return frame
@@ -539,7 +552,7 @@ class Environment:
 
             self.frameSeq.pop(0)
             cleanedFrame = np.maximum(self.rawFrameSeq[-1], self.rawFrameSeq[-2])
-            imsave('test.png', cleanedFrame)
+            #imsave('test.png', cleanedFrame)
             self.frameSeq.append(cleanedFrame)
             
             if terminal: 
