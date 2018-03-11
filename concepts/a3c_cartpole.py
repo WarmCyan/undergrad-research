@@ -18,8 +18,8 @@ from keras.layers import *
 from keras import backend as K
 
 #-- constants
-#ENV = 'CartPole-v0'
-ENV = 'SpaceInvaders-v0'
+ENV = 'CartPole-v0'
+#ENV = 'SpaceInvaders-v3'
 
 RUN_TIME = 30
 THREADS = 8

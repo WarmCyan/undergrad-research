@@ -1,0 +1,3 @@
+(250 max)
+
+In this paper, we explore two extensions to the architecture developed in the paper FeUdal Networks for Hierarchical Reinforcement Leanring, and how they alter the performance. 1. The original architecture utilized two layers of networks: a manager network and a worker network. We explore how training is affected by utilizing more than two layers. 2. We explore how much modularity the architecture allows by switching manager and worker layers on different gamees, and the feasibility of "pre-trained" worker networks for manager networks to use. (Transfer learning)

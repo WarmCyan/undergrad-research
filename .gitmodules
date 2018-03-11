@@ -1,3 +1,6 @@
 [submodule "concepts/tensorflow-a3c"]
 	path = concepts/tensorflow-a3c
 	url = https://github.com/mrahtz/tensorflow-a3c.git
+[submodule "concepts/universe-starter-agent"]
+	path = concepts/universe-starter-agent
+	url = https://github.com/openai/universe-starter-agent.git
