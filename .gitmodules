@@ -4,3 +4,6 @@
 [submodule "concepts/universe-starter-agent"]
 	path = concepts/universe-starter-agent
 	url = https://github.com/openai/universe-starter-agent.git
+[submodule "concepts/reinforcement-learning"]
+	path = concepts/reinforcement-learning
+	url = https://github.com/cgnicholls/reinforcement-learning.git

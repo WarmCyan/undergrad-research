@@ -4,7 +4,7 @@ a3c:
 	python A3C.py
 
 tutorial:
-	python a3c_cartpole.py
+	python A3C_actual.py
 
 clean:
 	@rm -rfd ../tensorboard_data/a3c_*
