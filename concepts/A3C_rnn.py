@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tf.contrib import slim
 import gym
 import numpy as np
 
@@ -362,7 +363,8 @@ class Network:
         print("Building graph with scope", self.scope)
         with tf.variable_scope(self.scope):
             #self.input = tf.placeholder(tf.float32, shape=(1,84,84,4), name='input') # TODO: pretty sure that shape isn't right
-            self.input = tf.placeholder(tf.float32, shape=(None,84,84,4), name='input') # TODO: pretty sure that shape isn't right
+            #self.input = tf.placeholder(tf.float32, shape=(None,84,84,4), name='input') # TODO: pretty sure that shape isn't right
+            self.input = tf.placeholder(tf.float32, shape=(None,84,84,1), name='input') 
             
             # 16 filters, kernel size of 8, stride of 4
             with tf.name_scope('conv1'):
@@ -374,7 +376,6 @@ class Network:
                 
                 self.log_w1 = tf.summary.histogram('w1', self.w1)
                 self.log_b1 = tf.summary.histogram('b1', self.b1)
-                
                 
             # 32 filters, kernel size of 4, stride of 2
             with tf.name_scope('conv2'):
@@ -402,25 +403,48 @@ class Network:
                 self.log_fc_w = tf.summary.histogram('fc_w', self.fc_w)
                 self.log_fc_b = tf.summary.histogram('fc_b', self.fc_b)
 
+
+
+
+            with tf.name_scope('lstm'):
+                lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(256, state_is_tuple=True)
+                c_init = np.zeros((1, lstm_cell.state_size.c), np.float32)
+                h_init = np.zeros((1, lstm_cell.state_size.h), np.float32)
+                self.state_in = (c_in, h_in)
+                rnn_in = tf.expand_dims(self.fc_out, [0])
+                step_size = tf.shape(self.input)[:1]
+                lstm_outputs, lstm_state = tf.nn.dynamic_rnn(lstm_cell, rnn_in, initial_state=state_in, sequence_length=step_size, time_major=False)
+                lstm_c, lstm_h = lstm_state
+                self.state_out = (lstm_c[:1, :], lstm_h[:1, :])
+                rnn_out = tf.reshape(lstm_outputs, [-1, 256])
+
+
+
             # policy output, policy = distribution of probabilities over actions, use softmax to choose highest probability action
             with tf.name_scope('policy'):
-                self.policy_w = tf.Variable(tf.random_normal([256, ACTION_SIZE]), name='policy_w')
+                #self.policy_w = tf.Variable(tf.random_normal([256, ACTION_SIZE]), name='policy_w')
 
                 # TODO: do we need biases as well?
-                self.policy_out = tf.nn.softmax(tf.matmul(self.fc_out, self.policy_w))
+                #self.policy_out = tf.nn.softmax(tf.matmul(self.fc_out, self.policy_w))
                 
-                self.log_policy_w = tf.summary.histogram('policy_w', self.policy_w)
+                #self.log_policy_w = tf.summary.histogram('policy_w', self.policy_w)
+
+                self.policy = slim.fully_connected(rnn_out, a_size, activation_fn=tf.nn.softmax, weights_initializer=normalized_columns_initializer(0.01), biases_initializer=None)
+
+                
 
             # Only a SINGLE output, just a single linear value
             with tf.name_scope('value'):
-                self.value_w = tf.Variable(tf.random_normal([256, 1]), name='value_w')
+                #self.value_w = tf.Variable(tf.random_normal([256, 1]), name='value_w')
                 #self.value_w = tf.Variable(tf.zeros([256, 1]), name='value_w')
 
                 # TODO: do we need a bias for this? (edit: I'm pretty sure since it's a single linear value, there's no point in having a bias value?)
 
-                self.value_out = tf.matmul(self.fc_out, self.value_w)
+                #self.value_out = tf.matmul(self.fc_out, self.value_w)
 
-                self.log_value_w = tf.summary.histogram('value_w', self.value_w)
+                #self.log_value_w = tf.summary.histogram('value_w', self.value_w)
+                
+                self.value = slim.fully_connected(rnn_out, 1, activation_fn=None, weights_initializer=normalized_columns_initializer(1.0), biases_initializer=None)
 
             if self.scope != 'global':
                 self.actions = tf.placeholder(shape=[None], dtype=tf.int32, name='actions')
