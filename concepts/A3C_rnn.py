@@ -269,14 +269,25 @@ class Worker:
             s_t = self.env.getInitialState()
             terminal = False
 
+
+            rnn_state = self.network.state_init
+
             # repeat until terminal state
             while not terminal:
                 # perform a_t according to policY9a_t|s_t; theta_)
-                policyVec, v = session.run([self.network.policy_out, self.network.value_out], feed_dict={self.network.input: [s_t]})
+                #policyVec, v = session.run([self.network.policy_out, self.network.value_out], feed_dict={self.network.input: [s_t]})
                 #a_t = np.argmax(policyVec)
+                
 
 
-                a_t = np.random.choice(ACTION_SIZE, p=policyVec[0])
+               # a_t = np.random.choice(ACTION_SIZE, p=policyVec[0])
+
+
+
+                a_dist, v, rnn_state = sess.run([self.network.policy, self.network.value, self.network.state_out], feed_dict={self.network.input: [s_t], self.network.state_in[0]: rnn_state[0], self.network.state_in[1]: rnn_state[1] })
+                a_t = np.random.choice(a_dist[0], p=a_dist[0])
+                a_t = np.argmax(a_dist == a_t)
+               
 
                 
 
