@@ -1,7 +1,7 @@
 all: a3c
 
 a3c:
-	python A3C.py
+	python A3C_rnn.py
 
 tutorial:
 	python A3C_actual.py

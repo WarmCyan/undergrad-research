@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tf.contrib import slim
+from tensorflow.contrib import slim
 import gym
 import numpy as np
 
@@ -48,6 +48,14 @@ def discount(x, gamma):
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
 
 
+def normalized_columns_initializer(std=1.0):
+    def _initializer(shape, dtype=None, partition_info=None):
+        out = np.random.randn(*shape).astype(np.float32)
+        out *= std / np.sqrt(np.square(out).sum(axis=0, keepdims=True))
+        return tf.constant(out)
+    return _initializer
+
+
 # globals NOTE: caution!
 atariEnvFree = True
 T = 0
@@ -56,16 +64,17 @@ global_index = 0
 
 
 # hyperparameters
-GAME = "SpaceInvaders-v0"
+#GAME = "SpaceInvaders-v0"
+GAME = "PongDeterministic-v3"
 ACTION_SIZE = 6
 
 ACTION_REPEAT = 1
-STATE_FRAME_COUNT = 4
+STATE_FRAME_COUNT = 1
 
 #LEARNING_RATE = .0001
 LEARNING_RATE = .001
-NUM_WORKERS = 16
-#NUM_WORKERS = 1
+#NUM_WORKERS = 16
+NUM_WORKERS = 1
 
 
 t_MAX = 5
@@ -160,7 +169,7 @@ class Manager:
         for i in range(EPOCHS):
             T = 0
             self.runEpoch(i)
-            self.testGlobal(i)
+            #self.testGlobal(i)
             subprocess.call(['notify-send', "Epoch " + str(i) + " complete"])
 
 
@@ -225,7 +234,15 @@ class Worker:
 
 
         # apply gradients to global network
-        summary, p_loss, v_loss, val, _ = session.run([self.network.log_op, self.network.policy_loss, self.network.value_loss, self.network.value_out, self.network.apply_gradients], feed_dict={self.network.input: states, self.network.actions: actions, self.network.target_v: discountedRewards, self.network.advantages: advantages})
+        rnn_state = self.network.state_init
+        summary, p_loss, v_loss, val, _ = session.run([self.network.log_op, self.network.policy_loss, self.network.value_loss, self.network.value_out, self.network.apply_gradients], feed_dict={
+            self.network.input: states, 
+            self.network.actions: actions,
+            self.network.target_v: discountedRewards,
+            self.network.advantages: advantages,
+            self.network.state_in[0]: rnn_state[0],
+            self.network.state_in[1]: rnn_state[1]
+            })
 
         #print("intermediate:")
         #print(test)
@@ -253,6 +270,10 @@ class Worker:
         global T
         global global_index
         while not coordinator.should_stop():
+
+
+            episode_reward = 0
+            episode_values = []
 
             # reset ops
             session.run(self.resetWeights)
@@ -283,12 +304,10 @@ class Worker:
                # a_t = np.random.choice(ACTION_SIZE, p=policyVec[0])
 
 
-
-                a_dist, v, rnn_state = sess.run([self.network.policy, self.network.value, self.network.state_out], feed_dict={self.network.input: [s_t], self.network.state_in[0]: rnn_state[0], self.network.state_in[1]: rnn_state[1] })
+                a_dist, v, rnn_state = session.run([self.network.policy_out, self.network.value_out, self.network.state_out], feed_dict={self.network.input: [s_t], self.network.state_in[0]: rnn_state[0], self.network.state_in[1]: rnn_state[1] })
                 a_t = np.random.choice(a_dist[0], p=a_dist[0])
                 a_t = np.argmax(a_dist == a_t)
                
-
                 
 
                 #print(self.name," - value prediction - ",v[0])
@@ -302,6 +321,7 @@ class Worker:
                 #if (r_t != 0): print(self.name,"*********************** got a reward",r_t)
 
                 history.append([s_t, a_t, r_t, s_t1, v[0,0]])
+                #episode_values.append(v[0,0])
 
                 s_t = s_t1
 
@@ -326,7 +346,15 @@ class Worker:
 
                     
                     R = 0.0
-                    if not terminal: R = session.run([self.network.value_out], feed_dict={self.network.input:[s_t]})[0]
+                    #if not terminal: R = session.run([self.network.value_out], feed_dict={self.network.input:[s_t]})[0]
+                    
+                    if not terminal: 
+                        R = session.run([self.network.value_out], feed_dict={
+                            self.network.input:[s_t], 
+                            self.network.state_in[0]: rnn_state[0],
+                            self.network.state_in[1]: rnn_state[1]})[0][0][0]
+                        print(R)
+                    
                     summary, p_loss, v_loss = self.train(history, session, R)
                     self.index += 1
                     train_writer.add_summary(summary, self.index)
@@ -357,9 +385,10 @@ class Worker:
                     t_start = t
                     #print("-------------------------------------- /training")
 
-            weights, global_summary = session.run([global_net.value_w, global_net.log_weights], feed_dict={global_net.input: states})
+            #weights, global_summary = session.run([global_net.value_w, global_net.log_weights], feed_dict={global_net.input: states})
+            #weights, global_summary = session.run([global_net.value_w, global_net.log_weights], feed_dict={global_net.input: states})
             global_index += 1
-            train_writer.add_summary(global_summary, global_index)
+            #train_writer.add_summary(global_summary, global_index)
             
             if T > T_MAX: break
 
@@ -379,7 +408,8 @@ class Network:
             
             # 16 filters, kernel size of 8, stride of 4
             with tf.name_scope('conv1'):
-                self.w1 = tf.Variable(tf.random_normal([8, 8, 4, 16]), name='weights1')
+                #self.w1 = tf.Variable(tf.random_normal([8, 8, 4, 16]), name='weights1')
+                self.w1 = tf.Variable(tf.random_normal([8, 8, 1, 16]), name='weights1')
                 #self.b1 = tf.Variable(tf.random_normal([16]), name='bias1')
                 self.b1 = tf.Variable(tf.zeros([16]), name='bias1')
                 self.conv1 = tf.nn.conv2d(self.input, self.w1, [1, 4, 4, 1], "VALID", name='conv1') 
@@ -419,11 +449,22 @@ class Network:
 
             with tf.name_scope('lstm'):
                 lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(256, state_is_tuple=True)
+                
                 c_init = np.zeros((1, lstm_cell.state_size.c), np.float32)
                 h_init = np.zeros((1, lstm_cell.state_size.h), np.float32)
+                self.state_init = [c_init, h_init]
+
+                c_in = tf.placeholder(tf.float32, [1, lstm_cell.state_size.c])
+                h_in = tf.placeholder(tf.float32, [1, lstm_cell.state_size.h])
                 self.state_in = (c_in, h_in)
+
+                
                 rnn_in = tf.expand_dims(self.fc_out, [0])
+                #rnn_in = self.fc_out
+                #step_size = tf.shape(self.input)[:1]
                 step_size = tf.shape(self.input)[:1]
+                state_in = tf.nn.rnn_cell.LSTMStateTuple(c_in, h_in)
+                
                 lstm_outputs, lstm_state = tf.nn.dynamic_rnn(lstm_cell, rnn_in, initial_state=state_in, sequence_length=step_size, time_major=False)
                 lstm_c, lstm_h = lstm_state
                 self.state_out = (lstm_c[:1, :], lstm_h[:1, :])
@@ -440,7 +481,7 @@ class Network:
                 
                 #self.log_policy_w = tf.summary.histogram('policy_w', self.policy_w)
 
-                self.policy = slim.fully_connected(rnn_out, a_size, activation_fn=tf.nn.softmax, weights_initializer=normalized_columns_initializer(0.01), biases_initializer=None)
+                self.policy_out = slim.fully_connected(rnn_out, ACTION_SIZE, activation_fn=tf.nn.softmax, weights_initializer=normalized_columns_initializer(0.01), biases_initializer=None)
 
                 
 
@@ -455,7 +496,7 @@ class Network:
 
                 #self.log_value_w = tf.summary.histogram('value_w', self.value_w)
                 
-                self.value = slim.fully_connected(rnn_out, 1, activation_fn=None, weights_initializer=normalized_columns_initializer(1.0), biases_initializer=None)
+                self.value_out = slim.fully_connected(rnn_out, 1, activation_fn=None, weights_initializer=normalized_columns_initializer(1.0), biases_initializer=None)
 
             if self.scope != 'global':
                 self.actions = tf.placeholder(shape=[None], dtype=tf.int32, name='actions')
@@ -497,7 +538,8 @@ class Network:
 
 
                 #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss, self.log_loss])
-                self.log_op = tf.summary.merge([self.log_w1, self.log_b1, self.log_w2, self.log_b2, self.log_fc_w, self.log_fc_b, self.log_value_w, self.log_policy_w, self.log_value_loss, self.log_policy_loss, self.log_loss, self.log_entropy, self.log_state])
+                #self.log_op = tf.summary.merge([self.log_w1, self.log_b1, self.log_w2, self.log_b2, self.log_fc_w, self.log_fc_b, self.log_value_w, self.log_policy_w, self.log_value_loss, self.log_policy_loss, self.log_loss, self.log_entropy, self.log_state])
+                self.log_op = tf.summary.merge([self.log_w1, self.log_b1, self.log_w2, self.log_b2, self.log_fc_w, self.log_fc_b, self.log_value_loss, self.log_policy_loss, self.log_loss, self.log_entropy, self.log_state])
                 #self.log_op = tf.summary.merge([self.log_value_loss, self.log_policy_loss])
 
                 local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, self.scope)
@@ -521,7 +563,7 @@ class Network:
                 self.log_score_max = tf.summary.scalar('score_max', tf.reduce_max(self.score))
                 self.log_score = tf.summary.merge([self.log_score_avg, self.log_score_min, self.log_score_max])
                 
-                self.log_weights = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w, self.log_policy_w])
+                #self.log_weights = tf.summary.merge([self.log_w1, self.log_w2, self.log_fc_w, self.log_value_w, self.log_policy_w])
                 #self.merged_summaries = tf.summary.merge_all()
                 #self.sess.run(tf.global_variables_initializer())
                 
@@ -543,13 +585,16 @@ class Environment:
 
         while not atariEnvFree: time.sleep(.01) # NOTE: some weird thing the atari emulator needs to make sure two threads don't simultaneously create an environment
         atariEnvFree = False
-        self.env = gym.make("SpaceInvaders-v0")
+        self.env = gym.make(GAME)
         #self.env = gym.make("Breakout-v0")
         atariEnvFree = True
         
         self.seqSize = STATE_FRAME_COUNT
         self.rawFrameSeq = []
         self.frameSeq = []
+
+        self.lastFrameRaw = None
+        self.frame = None
 
         self.finalScore = 0
 
@@ -558,15 +603,12 @@ class Environment:
     def getInitialState(self):
         print("Getting an initial state...")
         frame = self.preprocessFrame(self.env.reset())
-        self.frameSeq.append(frame) # TODO: make this based off of self.seqsize
-        self.frameSeq.append(frame)
-        self.frameSeq.append(frame)
-        self.frameSeq.append(frame)
         
-        self.rawFrameSeq.append(frame) # TODO: make this based off of self.seqsize
-        self.rawFrameSeq.append(frame)
-        self.rawFrameSeq.append(frame)
-        self.rawFrameSeq.append(frame)
+        self.rawFrameSeq.append(frame) # NOTE: need an extra one in case state frame count is zero?
+
+        for i in range(STATE_FRAME_COUNT):
+            self.frameSeq.append(frame) # TODO: make this based off of self.seqsize
+            self.rawFrameSeq.append(frame)
 
         state = np.dstack(self.frameSeq)
         
@@ -593,8 +635,13 @@ class Environment:
             self.rawFrameSeq.pop(0)
             self.rawFrameSeq.append(observationFrame)
 
+
             self.frameSeq.pop(0)
             cleanedFrame = np.maximum(self.rawFrameSeq[-1], self.rawFrameSeq[-2])
+            #cleanedFrame = np.maximum(self.lastFrameRaw, observationFrame)
+            self.frame = cleanedFrame
+            #self.lastFrameRaw = observationFrame
+            
             #imsave('test.png', cleanedFrame)
             self.frameSeq.append(cleanedFrame)
             
@@ -603,6 +650,7 @@ class Environment:
                 break
             
         state = np.dstack(self.frameSeq)
+        #state = self.frame
         
         self.finalScore += cumulativeReward
         
