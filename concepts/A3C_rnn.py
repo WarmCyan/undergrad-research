@@ -73,8 +73,8 @@ STATE_FRAME_COUNT = 1
 
 #LEARNING_RATE = .0001
 LEARNING_RATE = .001
-#NUM_WORKERS = 16
-NUM_WORKERS = 1
+NUM_WORKERS = 16
+#NUM_WORKERS = 1
 
 
 t_MAX = 5
@@ -136,8 +136,9 @@ class Manager:
         if render: e.env = gym.wrappers.Monitor(e.env, './runs/epoch_' + str(epochNum), force=True)
         state = e.getInitialState()
         terminal = False
+        rnn_state = self.globalNetwork.state_init
         while not terminal:
-            policyVec = self.session.run(self.globalNetwork.policy_out, feed_dict={self.globalNetwork.input: [state]})
+            policyVec, rnn_state = self.session.run([self.globalNetwork.policy_out, self.globalNetwork.state_out], feed_dict={self.globalNetwork.input: [state], self.globalNetwork.state_in[0]: rnn_state[0], self.globalNetwork.state_in[1]: rnn_state[1]})
             action = np.argmax(policyVec)
             state, reward, terminal = e.act(action)
                     
@@ -169,7 +170,7 @@ class Manager:
         for i in range(EPOCHS):
             T = 0
             self.runEpoch(i)
-            #self.testGlobal(i)
+            self.testGlobal(i)
             subprocess.call(['notify-send', "Epoch " + str(i) + " complete"])
 
 
@@ -353,7 +354,7 @@ class Worker:
                             self.network.input:[s_t], 
                             self.network.state_in[0]: rnn_state[0],
                             self.network.state_in[1]: rnn_state[1]})[0][0][0]
-                        print(R)
+                        #print(R)
                     
                     summary, p_loss, v_loss = self.train(history, session, R)
                     self.index += 1
@@ -404,7 +405,8 @@ class Network:
         with tf.variable_scope(self.scope):
             #self.input = tf.placeholder(tf.float32, shape=(1,84,84,4), name='input') # TODO: pretty sure that shape isn't right
             #self.input = tf.placeholder(tf.float32, shape=(None,84,84,4), name='input') # TODO: pretty sure that shape isn't right
-            self.input = tf.placeholder(tf.float32, shape=(None,84,84,1), name='input') 
+            #self.input = tf.placeholder(tf.float32, shape=(None,84,84,1), name='input') 
+            self.input = tf.placeholder(tf.float32, shape=(None,42,42,1), name='input') 
             
             # 16 filters, kernel size of 8, stride of 4
             with tf.name_scope('conv1'):
@@ -427,7 +429,8 @@ class Network:
                 self.conv2_relu = tf.nn.relu(tf.nn.bias_add(self.conv2, self.b2))
 
                 # flattened size is 9*9*32 = 2592
-                self.conv2_out = tf.reshape(self.conv2_relu, [-1, 2592], name='conv2_flatten') 
+                #self.conv2_out = tf.reshape(self.conv2_relu, [-1, 2592], name='conv2_flatten') 
+                self.conv2_out = tf.reshape(self.conv2_relu, [-1, 288], name='conv2_flatten') 
                 
                 self.log_w2 = tf.summary.histogram('w2', self.w2)
                 self.log_b2 = tf.summary.histogram('b2', self.b2)
@@ -435,7 +438,8 @@ class Network:
 
             # fully connected layer with 256 hidden units
             with tf.name_scope('fully_connected'):
-                self.fc_w = tf.Variable(tf.random_normal([2592, 256]), name='fc_weights') 
+                #self.fc_w = tf.Variable(tf.random_normal([2592, 256]), name='fc_weights') 
+                self.fc_w = tf.Variable(tf.random_normal([288, 256]), name='fc_weights') 
                 #self.fc_b = tf.Variable(tf.random_normal([256]), name='fc_biases') # fully connected biases
                 self.fc_b = tf.Variable(tf.zeros([256]), name='fc_biases') # fully connected biases
 
@@ -603,7 +607,7 @@ class Environment:
     def getInitialState(self):
         print("Getting an initial state...")
         frame = self.preprocessFrame(self.env.reset())
-        
+        #imsave('INITIAL.png', self.env.reset())
         self.rawFrameSeq.append(frame) # NOTE: need an extra one in case state frame count is zero?
 
         for i in range(STATE_FRAME_COUNT):
@@ -615,12 +619,28 @@ class Environment:
         return state
 
     def preprocessFrame(self, frame):
-        #frame = resize(frame, (110,84))
-        frame = resize(frame, (94,84))
-        #frame = frame[18:102,0:84]
-        frame = frame[4:88,0:84]
-        #frame = frame[10:94,0:84]
-        frame = rgb2grey(frame)
+        #imsave("unprocessed.png", frame)
+        #
+        ##frame = resize(frame, (110,84))
+        ##frame = resize(frame, (94,84))
+        #frame = resize(frame, (84,84))
+        ##frame = frame[18:102,0:84]
+        ##frame = frame[4:88,0:84]
+        ##frame = frame[10:94,0:84]
+        #frame = rgb2grey(frame)
+        #imsave('processed.png', frame)
+        #return frame
+    
+        frame = frame[34:34+160, :160]
+        # Resize by half, then down to 42x42 (essentially mipmapping). If
+        # we resize directly we lose pixels that, when mapped to 42x42,
+        # aren't close enough to the pixel boundary.
+        frame = resize(frame, (80, 80))
+        frame = resize(frame, (42, 42))
+        frame = frame.mean(2)
+        frame = frame.astype(np.float32)
+        frame *= (1.0 / 255.0)
+        frame = np.reshape(frame, [42, 42, 1])
         return frame
 
 
