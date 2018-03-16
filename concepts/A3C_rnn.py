@@ -71,8 +71,8 @@ ACTION_SIZE = 6
 ACTION_REPEAT = 1
 STATE_FRAME_COUNT = 1
 
-#LEARNING_RATE = .0001
-LEARNING_RATE = .001
+LEARNING_RATE = .0001
+#LEARNING_RATE = .001
 NUM_WORKERS = 16
 #NUM_WORKERS = 1
 
@@ -200,6 +200,20 @@ class Worker:
         #print("Passed values:", values)
 
 
+        actions = np.stack(actions)
+
+
+
+        #rewards = np.asarray(rewards)
+        #values = np.asarray(values + [bootstrap]) # vpred_t
+        #rewards_plus = np.asarray(rewards + [bootstrap]) # rewards_plus_v
+        #discountedRewards = discount(rewards_plus, GAMMA)[:-1] # batch_r
+        #advantages = rewards[1:] + GAMMA*values[1:] - values[:-1] # delta_t
+        #advantages = discount(advantages, GAMMA)
+
+        
+
+
         values = np.asarray(values.tolist() + [bootstrap]) # TODO: figure out what the bootstrapping stuff is?
         #print("########### VALUES ###############")
         #print(values)
@@ -232,6 +246,12 @@ class Worker:
         #states = np.array(np.split(states, 3))
         #states = np.split(states, 1)
         #print(states.shape)
+
+
+
+
+
+        
 
 
         # apply gradients to global network
@@ -270,10 +290,13 @@ class Worker:
         #T = 0
         global T
         global global_index
+
+        episodeCount = 0
+        
         while not coordinator.should_stop():
 
 
-            episode_reward = 0
+            episode_reward = 0.0
             episode_values = []
 
             # reset ops
@@ -305,9 +328,12 @@ class Worker:
                # a_t = np.random.choice(ACTION_SIZE, p=policyVec[0])
 
 
-                a_dist, v, rnn_state = session.run([self.network.policy_out, self.network.value_out, self.network.state_out], feed_dict={self.network.input: [s_t], self.network.state_in[0]: rnn_state[0], self.network.state_in[1]: rnn_state[1] })
-                a_t = np.random.choice(a_dist[0], p=a_dist[0])
-                a_t = np.argmax(a_dist == a_t)
+                a_t_hot, v, rnn_state = session.run([self.network.sample, self.network.value_out, self.network.state_out], feed_dict={self.network.input: [s_t], self.network.state_in[0]: rnn_state[0], self.network.state_in[1]: rnn_state[1] })
+                #print(a_t)
+                a_t = np.argmax(a_t_hot)
+                #a_dist, v, rnn_state = session.run([self.network.policy_out, self.network.value_out, self.network.state_out], feed_dict={self.network.input: [s_t], self.network.state_in[0]: rnn_state[0], self.network.state_in[1]: rnn_state[1] })
+                #a_t = np.random.choice(a_dist[0], p=a_dist[0])
+                #a_t = np.argmax(a_dist == a_t)
                
                 
 
@@ -321,7 +347,9 @@ class Worker:
                 s_t1, r_t, terminal = self.env.act(a_t)
                 #if (r_t != 0): print(self.name,"*********************** got a reward",r_t)
 
-                history.append([s_t, a_t, r_t, s_t1, v[0,0]])
+                #history.append([s_t, a_t, r_t, s_t1, v[0,0]])
+                #history.append([s_t, a_t, r_t, s_t1, v[0]])
+                history.append([s_t, a_t_hot, r_t, s_t1, v[0]])
                 #episode_values.append(v[0,0])
 
                 s_t = s_t1
@@ -353,8 +381,11 @@ class Worker:
                         R = session.run([self.network.value_out], feed_dict={
                             self.network.input:[s_t], 
                             self.network.state_in[0]: rnn_state[0],
-                            self.network.state_in[1]: rnn_state[1]})[0][0][0]
+                            self.network.state_in[1]: rnn_state[1]})[0]
                         #print(R)
+                    else:
+                        result = session.run(self.network.log_episode_reward, feed_dict={self.network.episode_reward: [self.env.finalScore]})
+                        train_writer.add_summary(result, global_index)
                     
                     summary, p_loss, v_loss = self.train(history, session, R)
                     self.index += 1
@@ -460,7 +491,7 @@ class Network:
 
                 c_in = tf.placeholder(tf.float32, [1, lstm_cell.state_size.c])
                 h_in = tf.placeholder(tf.float32, [1, lstm_cell.state_size.h])
-                self.state_in = (c_in, h_in)
+                self.state_in = [c_in, h_in]
 
                 
                 rnn_in = tf.expand_dims(self.fc_out, [0])
@@ -471,7 +502,7 @@ class Network:
                 
                 lstm_outputs, lstm_state = tf.nn.dynamic_rnn(lstm_cell, rnn_in, initial_state=state_in, sequence_length=step_size, time_major=False)
                 lstm_c, lstm_h = lstm_state
-                self.state_out = (lstm_c[:1, :], lstm_h[:1, :])
+                self.state_out = [lstm_c[:1, :], lstm_h[:1, :]]
                 rnn_out = tf.reshape(lstm_outputs, [-1, 256])
 
 
@@ -479,13 +510,23 @@ class Network:
             # policy output, policy = distribution of probabilities over actions, use softmax to choose highest probability action
             with tf.name_scope('policy'):
                 #self.policy_w = tf.Variable(tf.random_normal([256, ACTION_SIZE]), name='policy_w')
+                #self.policy_w = tf.Variable(normalized_columns_initializer(0.01), expected_shape=(256, ACTION_SIZE), name='policy_w')
+                #self.policy_b = tf.Variable(tf.constant_initiailizer(0), expected_shape=(256), name='policy_b')
+
+                self.policy_w = tf.get_variable('policy_w', [256, ACTION_SIZE], initializer=normalized_columns_initializer(.01))
+                self.policy_b = tf.get_variable('policy_b', [ACTION_SIZE], initializer=tf.constant_initializer(0))
 
                 # TODO: do we need biases as well?
                 #self.policy_out = tf.nn.softmax(tf.matmul(self.fc_out, self.policy_w))
+                self.policy_out = tf.matmul(rnn_out, self.policy_w) + self.policy_b
                 
-                #self.log_policy_w = tf.summary.histogram('policy_w', self.policy_w)
+                self.log_policy_w = tf.summary.histogram('policy_w', self.policy_w)
 
-                self.policy_out = slim.fully_connected(rnn_out, ACTION_SIZE, activation_fn=tf.nn.softmax, weights_initializer=normalized_columns_initializer(0.01), biases_initializer=None)
+                #self.policy_out = slim.fully_connected(rnn_out, ACTION_SIZE, activation_fn=tf.nn.softmax, weights_initializer=normalized_columns_initializer(0.01), biases_initializer=None)
+
+
+            with tf.name_scope('sample'):
+                self.sample = tf.one_hot(tf.squeeze(tf.multinomial(self.policy_out - tf.reduce_max(self.policy_out, [1], keep_dims=True), 1), [1]), ACTION_SIZE)[0, :]
 
                 
 
@@ -494,15 +535,19 @@ class Network:
                 #self.value_w = tf.Variable(tf.random_normal([256, 1]), name='value_w')
                 #self.value_w = tf.Variable(tf.zeros([256, 1]), name='value_w')
 
+                self.value_w = tf.get_variable('value_w', [256, 1], initializer=normalized_columns_initializer())
+                self.value_b = tf.get_variable('value_b', [1], initializer=tf.constant_initializer(0))
+
                 # TODO: do we need a bias for this? (edit: I'm pretty sure since it's a single linear value, there's no point in having a bias value?)
 
-                #self.value_out = tf.matmul(self.fc_out, self.value_w)
+                self.value_out = tf.reshape(tf.matmul(rnn_out, self.value_w) + self.value_b, [-1])
 
                 #self.log_value_w = tf.summary.histogram('value_w', self.value_w)
                 
-                self.value_out = slim.fully_connected(rnn_out, 1, activation_fn=None, weights_initializer=normalized_columns_initializer(1.0), biases_initializer=None)
+                #self.value_out = slim.fully_connected(rnn_out, 1, activation_fn=None, weights_initializer=normalized_columns_initializer(1.0), biases_initializer=None)
 
             if self.scope != 'global':
+                '''
                 self.actions = tf.placeholder(shape=[None], dtype=tf.int32, name='actions')
                 self.target_v = tf.placeholder(shape=[None], dtype=tf.float32, name='target_v',)
                 self.advantages = tf.placeholder(shape=[None], dtype=tf.float32, name='advantages')
@@ -529,10 +574,29 @@ class Network:
                 self.loss = .5 * self.value_loss + self.policy_loss - self.entropy * BETA 
                 #self.loss = tf.reduce_mean(.5 * self.value_loss + self.policy_loss + self.entropy * BETA) 
                 #self.loss = self.value_loss
+                '''
+
+                self.actions = tf.placeholder(shape=[None, ACTION_SIZE], dtype=tf.float32, name='actions')
+                self.target_v = tf.placeholder(shape=[None], dtype=tf.float32, name='target_v',)
+                self.advantages = tf.placeholder(shape=[None], dtype=tf.float32, name='advantages')
+
+                self.log_prob_tf = tf.nn.log_softmax(self.policy_out)
+                self.prob_tf = tf.nn.softmax(self.policy_out)
+
+                self.policy_loss = -tf.reduce_sum(tf.reduce_sum(self.log_prob_tf*self.actions, [1])*self.advantages)
+                self.value_loss = 0.5 * tf.reduce_sum(tf.square(self.value_out - self.target_v))
+                self.entropy = -tf.reduce_sum(self.prob_tf * self.log_prob_tf)
+
+                self.loss = self.policy_loss + .5 * self.value_loss - self.entropy * BETA
+                
 
 
 
                 # summaries
+                self.episode_reward = tf.placeholder(shape=[None], dtype=tf.float32, name='score')
+                
+                self.log_episode_reward = tf.summary.scalar('episode_reward', tf.reduce_mean(self.episode_reward))
+                
                 self.log_value_loss = tf.summary.scalar('value_loss', self.value_loss)
                 self.log_policy_loss = tf.summary.scalar('policy_loss', self.policy_loss)
                 self.log_entropy = tf.summary.scalar('entropy', self.entropy)
