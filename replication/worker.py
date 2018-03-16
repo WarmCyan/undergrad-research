@@ -23,7 +23,10 @@ class FastSaver(tf.train.Saver):
                                     meta_graph_suffix, False)
 
 def run(args, server):
+    # TODO: pass in argument to determine whether to monitor or not
     env = create_env(args.env_id, client_id=str(args.task), remotes=args.remotes)
+
+
     trainer = A3C(env, args.task, args.visualise)
 
     # Variable names that start with "local" are not saved in checkpoints.

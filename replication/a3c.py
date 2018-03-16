@@ -9,6 +9,14 @@ import threading
 import distutils.version
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
+
+UPDATE_STEPS = 20
+BETA = .01
+LEARNING_RATE = .0001
+ALPHA = .99
+
+
+
 def discount(x, gamma):
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
 
@@ -198,7 +206,7 @@ should be computed.
             entropy = - tf.reduce_sum(prob_tf * log_prob_tf)
 
             bs = tf.to_float(tf.shape(pi.x)[0])
-            self.loss = pi_loss + 0.5 * vf_loss - entropy * 0.01
+            self.loss = pi_loss + 0.5 * vf_loss - entropy * BETA
 
             # 20 represents the number of "local steps":  the number of timesteps
             # we run the policy before we update the parameters.
@@ -206,7 +214,7 @@ should be computed.
             # on the one hand;  but on the other hand, we get less frequent parameter updates, which
             # slows down learning.  In this code, we found that making local steps be much
             # smaller than 20 makes the algorithm more difficult to tune and to get to work.
-            self.runner = RunnerThread(env, pi, 20, visualise)
+            self.runner = RunnerThread(env, pi, UPDATE_STEPS, visualise)
 
 
             grads = tf.gradients(self.loss, pi.var_list)
@@ -238,7 +246,8 @@ should be computed.
             inc_step = self.global_step.assign_add(tf.shape(pi.x)[0])
 
             # each worker has a different set of adam optimizer parameters
-            opt = tf.train.AdamOptimizer(1e-4)
+            #opt = tf.train.AdamOptimizer(1e-4)
+            opt = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
             self.train_op = tf.group(opt.apply_gradients(grads_and_vars), inc_step)
             self.summary_writer = None
             self.local_steps = 0

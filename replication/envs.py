@@ -6,7 +6,7 @@ from gym import spaces
 import logging
 import universe
 from universe import vectorized
-from universe.wrappers import BlockingReset, GymCoreAction, EpisodeID, Unvectorize, Vectorize, Vision, Logger
+from universe.wrappers import BlockingReset, GymCoreAction, EpisodeID, Unvectorize, Vectorize, Vision, Logger, Monitor
 from universe import spaces as vnc_spaces
 from universe.spaces.vnc_event import keycode
 import time
@@ -16,6 +16,8 @@ universe.configure_logging()
 
 def create_env(env_id, client_id, remotes, **kwargs):
     spec = gym.spec(env_id)
+    
+    # NOTE: adding in monitor for video recording...or here?
 
     if spec.tags.get('flashgames', False):
         return create_flash_env(env_id, client_id, remotes, **kwargs)
@@ -72,10 +74,17 @@ def create_vncatari_env(env_id, client_id, remotes, **_):
 
 def create_atari_env(env_id):
     env = gym.make(env_id)
+    
+    # TODO: add video monitor here
+    env = Monitor(env, "runs/", force=True)
+    
     env = Vectorize(env)
     env = AtariRescale42x42(env)
     env = DiagnosticsInfo(env)
     env = Unvectorize(env)
+
+
+    
     return env
 
 def DiagnosticsInfo(env, *args, **kwargs):
