@@ -1,3 +1,7 @@
 *.swp
 *.swo
 **/.ipynb_checkpoints/**
+
+*.phantom
+**/__pycache__/**
+**/tmp/**
