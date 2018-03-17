@@ -43,8 +43,8 @@ def create_commands(session, num_workers, remotes, env_id, logdir, shell='bash',
         '--env-id', env_id,
         '--num-workers', str(num_workers)]
 
-    if visualise:
-        base_cmd += ['--visualise']
+    #if visualise:
+        #base_cmd += ['--visualise']
 
     if remotes is None:
         remotes = ["1"] * num_workers
@@ -53,9 +53,20 @@ def create_commands(session, num_workers, remotes, env_id, logdir, shell='bash',
         assert len(remotes) == num_workers
 
     cmds_map = [new_cmd(session, "ps", base_cmd + ["--job-name", "ps"], mode, logdir, shell)]
-    for i in range(num_workers):
+    for i in range(num_workers-1):
         cmds_map += [new_cmd(session,
             "w-%d" % i, base_cmd + ["--job-name", "worker", "--task", str(i), "--remotes", remotes[i]], mode, logdir, shell)]
+
+    if visualise:
+        i += 1
+        base_cmd += ['--visualise']
+        cmds_map += [new_cmd(session,
+            "w-%d" % i, base_cmd + ["--job-name", "worker", "--task", str(i), "--remotes", remotes[i]], mode, logdir, shell)]
+        
+    # renderer thread
+    #i +=1 
+    #cmds_map += [new_cmd(session,
+        #"w-%d" % i, base_cmd + ["--job-name", "renderer", "--task", str(num_workers-1), "--remotes", remotes[i]], mode, logdir, shell)]
 
     cmds_map += [new_cmd(session, "tb", ["tensorboard", "--logdir", logdir, "--port", "6006"], mode, logdir, shell)]
     if mode == 'tmux':
@@ -76,7 +87,7 @@ def create_commands(session, num_workers, remotes, env_id, logdir, shell='bash',
         notes += ["Use `tmux kill-session -t {}` to kill the job".format(session)]
     else:
         notes += ["Use `tail -f {}/*.out` to watch process output".format(logdir)]
-    notes += ["Point your browser to http://localhost:6006 to see Tensorboard"]
+    notes += ["Point your browser to http://localhost:12345 to see Tensorboard"]
 
     if mode == 'tmux':
         cmds += [

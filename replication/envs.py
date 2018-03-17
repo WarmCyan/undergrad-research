@@ -14,10 +14,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 universe.configure_logging()
 
-def create_env(env_id, client_id, remotes, **kwargs):
+def create_env(env_id, client_id, remotes, renderOnly=False, **kwargs):
     spec = gym.spec(env_id)
-    
-    # NOTE: adding in monitor for video recording...or here?
 
     if spec.tags.get('flashgames', False):
         return create_flash_env(env_id, client_id, remotes, **kwargs)
@@ -26,7 +24,7 @@ def create_env(env_id, client_id, remotes, **kwargs):
     else:
         # Assume atari.
         assert "." not in env_id  # universe environments have dots in names.
-        return create_atari_env(env_id)
+        return create_atari_env(env_id, renderOnly)
 
 def create_flash_env(env_id, client_id, remotes, **_):
     env = gym.make(env_id)
@@ -72,19 +70,19 @@ def create_vncatari_env(env_id, client_id, remotes, **_):
     env.configure(remotes=remotes, start_timeout=15 * 60, fps=fps, client_id=client_id)
     return env
 
-def create_atari_env(env_id):
+def create_atari_env(env_id, renderOnly):
     env = gym.make(env_id)
-    
-    # TODO: add video monitor here
-    env = Monitor(env, "runs/", force=True)
-    
-    env = Vectorize(env)
-    env = AtariRescale42x42(env)
-    env = DiagnosticsInfo(env)
-    env = Unvectorize(env)
 
-
+    if renderOnly:
+        env = Monitor(env, 'runs', force=True)
+        env = AtariRescale42x42(env)
+    else:
+        env = Vectorize(env)
+        env = AtariRescale42x42(env)
+        env = DiagnosticsInfo(env)
+        env = Unvectorize(env)
     
+        
     return env
 
 def DiagnosticsInfo(env, *args, **kwargs):
