@@ -122,13 +122,23 @@ class FuNPolicy(object):
         
         m_lstm_outputs = None # TODO: 
 
-        g_ = m_lstm_outputs # NOTE: again, not sure if this is true
+        g_ = m_lstm_outputs # NOTE: again, not sure if this is true, also may need to reshape?
         g_norm = tf.sqrt(tf.reduce_sum(tf.square(g_), 1)) # TODO: don't know if reduce_sum dim of 1 is correct?
         self.g = g_ / g_norm
         
-        self.m_vf = tf.reshape(linear(m_lstm_outputs, "m_value", normalized_columns_initializer(1.0)), [-1])
+        self.m_vf = tf.reshape(linear(m_lstm_outputs, 1, "m_value", normalized_columns_initializer(1.0)), [-1])
 
-        self.w = None # TODO: 
+
+        self.pooled_goals = reduce_sum(self.g, 0) # TODO: which dimension are these pooled???
+        
+        # NOTE: keep in mind phi is technically trained as part of worker
+        # NOTE: not using linear because no bias
+        self.phi_w = tf.get_variable("phi/w", [self.pooled_goals.get_shape()[1], size], initializer=normalized_columns_initializer(1.0))
+        self.w = matmul(self.pooled_goals, self.phi_w)
+        
+
+
+        #self.w = 
         
 
         # WORKER NETWORK
@@ -158,7 +168,7 @@ class FuNPolicy(object):
         self.U = linear(w_lstm_outputs, ac_space, "U", normalized_columns_initializer(0.01))
 
         # NOTE: I assume this is where value is calculated, but I don't actually know
-        self.w_vf = tf.reshape(linear(w_lstm_outputs, "w_value", normalized_columns_initializer(1.0)), [-1])
+        self.w_vf = tf.reshape(linear(w_lstm_outputs, 1, "w_value", normalized_columns_initializer(1.0)), [-1])
         
         #self.action = tf.softmax(tf.matmul(self.U, self.w))
-        self.action = tf.matmul(self.U, self.w)
+        self.pi = tf.matmul(self.U, self.w)

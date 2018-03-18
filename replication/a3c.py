@@ -14,6 +14,7 @@ import sys
 LEARNING_RATE = 1e-4
 ALPHA = .99
 LOCAL_STEPS = 40
+HORIZEN_C = 10
 
 
 def discount(x, gamma):
@@ -46,31 +47,43 @@ a piece of a complete rollout.  We run our agent, and process its experience
 once it has processed enough steps.
 """
     def __init__(self):
+        self.percepts = []
         self.states = []
         self.actions = []
         self.rewards = []
-        self.values = []
+        self.values_w = []
+        self.values_m = []
         self.r = 0.0
         self.terminal = False
-        self.features = []
+        self.features_w = [] 
+        self.features_m = [] 
+        self.goals = []
 
-    def add(self, state, action, reward, value, terminal, features):
+    def add(self, percept, state, action, reward, value_w, value_m, terminal, features_w, features_m, goals):
+        self.percepts += [percept]
         self.states += [state]
         self.actions += [action]
         self.rewards += [reward]
-        self.values += [value]
+        self.values_w += [value_w]
+        self.values_m += [value_m]
         self.terminal = terminal
-        self.features += [features]
+        self.features_w += [features_w]
+        self.features_m += [features_m]
+        self.goals += [goals]
 
     def extend(self, other):
         assert not self.terminal
+        self.percepts.extend(other.percepts)
         self.states.extend(other.states)
         self.actions.extend(other.actions)
         self.rewards.extend(other.rewards)
-        self.values.extend(other.values)
+        self.values_w.extend(other.values_w)
+        self.values_m.extend(other.values_m)
         self.r = other.r
         self.terminal = other.terminal
-        self.features.extend(other.features)
+        self.features_w.extend(other.features_w)
+        self.features_m.extend(other.features_m)
+        self.goals.extend(other.goals)
 
 class RunnerThread(threading.Thread):
     """
@@ -250,15 +263,28 @@ should be computed.
         worker_device = "/job:worker/task:{}/cpu:0".format(task)
         with tf.device(tf.train.replica_device_setter(1, worker_device=worker_device)):
             with tf.variable_scope("global"):
-                self.network = LSTMPolicy(env.observation_space.shape, env.action_space.n)
+                self.network = FuNPolicy(env.observation_space.shape, env.action_space.n)
                 self.global_step = tf.get_variable("global_step", [], tf.int32, initializer=tf.constant_initializer(0, dtype=tf.int32),
                                                    trainable=False)
 
         with tf.device(worker_device):
             with tf.variable_scope("local"):
-                self.local_network = pi = LSTMPolicy(env.observation_space.shape, env.action_space.n)
+                self.local_network = pi = FuNPolicy(env.observation_space.shape, env.action_space.n)
                 pi.global_step = self.global_step
 
+
+            self.r = tf.placeholder(tf.float32, [None], name='r') # NOTE: same for both manager and worker, but worker has the additional intrinsic reward
+            
+            self.ac = tf.placeholder(tf.float32, [None, env.action_space.n], name="ac")
+            self.adv_w = tf.placeholder(tf.float32, [None], name='adv_w')
+
+
+            self.adv_m = tf.placeholder(tf.float32, [None], name='adv_m')
+            self.gt = tf.placeholder(tf.float32, [None, 256], name='gt')
+
+
+
+            '''
             self.ac = tf.placeholder(tf.float32, [None, env.action_space.n], name="ac")
             self.adv = tf.placeholder(tf.float32, [None], name="adv")
             self.r = tf.placeholder(tf.float32, [None], name="r")
@@ -321,6 +347,7 @@ should be computed.
             self.train_op = tf.group(opt.apply_gradients(grads_and_vars), inc_step)
             self.summary_writer = None
             self.local_steps = 0
+            '''
 
     def start(self, sess, summary_writer):
         self.runner.start_runner(sess, summary_writer)
