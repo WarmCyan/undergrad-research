@@ -1,5 +1,5 @@
 all:
-	python train.py --env-id SpaceInvaders-v0 --visualise
+	python train.py --env-id PongDeterministic-v3 --visualise
 
 clean:
 	@rm -rfd tmp/*

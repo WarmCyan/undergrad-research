@@ -4,13 +4,6 @@ import tensorflow.contrib.rnn as rnn
 import distutils.version
 use_tf100_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('1.0.0')
 
-
-
-EMBEDDING_DIMENSIONALITY = 16
-
-
-
-
 def normalized_columns_initializer(std=1.0):
     def _initializer(shape, dtype=None, partition_info=None):
         out = np.random.randn(*shape).astype(np.float32)
@@ -101,64 +94,3 @@ class LSTMPolicy(object):
     def value(self, ob, c, h):
         sess = tf.get_default_session()
         return sess.run(self.vf, {self.x: [ob], self.state_in[0]: c, self.state_in[1]: h})[0]
-
-
-class FuNPolicy(object):
-    def __init__(self, ob_space, ac_space):
-        self.x = tf.placeholder(tf.float32, [None] + list(ob_space))
-
-        self.z = tf.expand_dims(flatten(tf.nn.elu(conv2d(self.x, 32,  "l{}".format(i+1), [3,3], [2,2]))), [0])
-
-
-        size = 256
-        
-        
-        # MANAGER NETWORK
-
-        self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01)))
-
-        
-        # TODO: dilated lstm
-        
-        m_lstm_outputs = None # TODO: 
-
-        g_ = m_lstm_outputs # NOTE: again, not sure if this is true
-        g_norm = tf.sqrt(tf.reduce_sum(tf.square(g_), 1)) # TODO: don't know if reduce_sum dim of 1 is correct?
-        self.g = g_ / g_norm
-        
-        self.m_vf = tf.reshape(linear(m_lstm_outputs, "m_value", normalized_columns_initializer(1.0)), [-1])
-
-        self.w = None # TODO: 
-        
-
-        # WORKER NETWORK
-
-        w_lstm = rnn.rnn_cell.BasicLSTMCell(size, state_is_tuple=True)
-        self.w_state_size = w_lstm.state_size
-        stepsize = tf.shape(self.z)[:1]
-
-        w_c_init = np.zeros((1, w_lstm.state_size.c), np.float32)
-        w_h_init = np.zeros((1, w_lstm.state_size.h), np.float32)
-        self.w_state_init = [w_c_init, w_h_init]
-
-        w_c_in = tf.placeholder(tf.float32, [1, w_lstm.state_size.c])
-        w_h_in = tf.placeholder(tf.float32, [1, w_lstm.state_size.h])
-        self.w_state_in = [w_c_in, w_h_in]
-
-        w_state_in = rnn.rnn_cell.LSTMStateTuple(w_c_in, w_h_in)
-        w_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
-            w_lstm, self.z, initial_state=w_state_in, sequence_length=w_step_size,
-            time_major=False)
-
-        w_lstm_c, w_lstm_h = w_lstm_state
-        w_lstm_outputs = tf.reshape(w_lstm_outputs, [-1, size])
-        self.w_state_out = [w_lstm_c[:1, :], w_lstm_h[:1, :]]
-
-        # NOTE: is U the direct lstm output? or is there in fact a linear layer inbetween? Idt there is
-        self.U = linear(w_lstm_outputs, ac_space, "U", normalized_columns_initializer(0.01))
-
-        # NOTE: I assume this is where value is calculated, but I don't actually know
-        self.w_vf = tf.reshape(linear(w_lstm_outputs, "w_value", normalized_columns_initializer(1.0)), [-1])
-        
-        #self.action = tf.softmax(tf.matmul(self.U, self.w))
-        self.action = tf.matmul(self.U, self.w)
