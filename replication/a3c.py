@@ -5,6 +5,7 @@ import tensorflow as tf
 from model import LSTMPolicy
 import six.moves.queue as queue
 import scipy.signal
+import scipy.spatial
 import threading
 import distutils.version
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
@@ -24,13 +25,44 @@ def process_rollout(rollout, gamma, lambda_=1.0):
     """
 given a rollout, compute its returns and the advantage
 """
+
+
+    # need: intrinsic reward, both batch advantages
+
+    batch_states = np.asarray(rollout.states)
+    batch_actions = np.asarray(rollout.actions)
+    
+    latent_states = np.asarray(rollout.m_states)
+    goals = np.asarray(rollout.goals)
+    
+    rewards = np.asarray(rollout.rewards) # NOTE: environment rewards
+    pred_v_m = np.asarray(rollout.values_m + [rollout.r])
+
+    pred_v_w = np.asarray(rollout.values_w + [rollout.r]) # NOTE: making assumption that this is correct? Do we need to handle an additional bootstrapped intrinsic reward?
+
+    rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])
+    batch_reward = discount(rewards_plus_v, gamma)[:-1] # NOTE: target_v, right?
+
+    delta_t_m = rewards + gamma*pred_v_m[1:] - pred_v_m[:-1]
+
+    # calculate intrinsic reward TODO: this can't efficiently be done here, throw calculations into tensorflow loss graph
+    #reward_intrinsic = 0
+    #for i in range(HORIZEN_C):
+        #reward_intrinsic += scipy.spatial.distance.cosine(latent_states[i], goals[i])
+    #reward_intrinsic /= HORIZEN_C
+
+    #delta_t_w = rewards
+
+    
+
+    '''
     batch_si = np.asarray(rollout.states)
     batch_a = np.asarray(rollout.actions)
     rewards = np.asarray(rollout.rewards)
     vpred_t = np.asarray(rollout.values + [rollout.r])
 
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])
-    batch_r = discount(rewards_plus_v, gamma)[:-1]
+    batch_r = discount(rewards_plus_v, gamma)[:-1] # NOTE: target_v, right?
     delta_t = rewards + gamma * vpred_t[1:] - vpred_t[:-1]
     # this formula for the advantage comes "Generalized Advantage Estimation":
     # https://arxiv.org/abs/1506.02438
@@ -38,6 +70,7 @@ given a rollout, compute its returns and the advantage
 
     features = rollout.features[0]
     return Batch(batch_si, batch_a, batch_adv, batch_r, rollout.terminal, features)
+    '''
 
 Batch = namedtuple("Batch", ["si", "a", "adv", "r", "terminal", "features"])
 
@@ -49,6 +82,7 @@ once it has processed enough steps.
     def __init__(self):
         self.percepts = []
         self.states = []
+        self.m_states = [] # NOTE: this is s_t for the manager
         self.actions = []
         self.rewards = []
         self.values_w = []
@@ -59,9 +93,10 @@ once it has processed enough steps.
         self.features_m = [] 
         self.goals = []
 
-    def add(self, percept, state, action, reward, value_w, value_m, terminal, features_w, features_m, goals):
+    def add(self, percept, state, m_state, action, reward, value_w, value_m, terminal, features_w, features_m, goals):
         self.percepts += [percept]
         self.states += [state]
+        self.m_states += [m_state]
         self.actions += [action]
         self.rewards += [reward]
         self.values_w += [value_w]
@@ -75,6 +110,7 @@ once it has processed enough steps.
         assert not self.terminal
         self.percepts.extend(other.percepts)
         self.states.extend(other.states)
+        self.m_states.extend(other.m_states)
         self.actions.extend(other.actions)
         self.rewards.extend(other.rewards)
         self.values_w.extend(other.values_w)

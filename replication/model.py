@@ -115,14 +115,14 @@ class FuNPolicy(object):
         
         # MANAGER NETWORK
 
-        self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01)))
+        self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
 
         
         # TODO: dilated lstm
         
         m_lstm_outputs = None # TODO: 
 
-        g_ = m_lstm_outputs # NOTE: again, not sure if this is true, also may need to reshape?
+        g_ = m_lstm_outputs # NOTE: again, not sure if this is true, also may need to reshape? TODO: only take the last 16? (would have to match EMBEDDING_DIMENSIONALITY in order for cosine similarity to work
         g_norm = tf.sqrt(tf.reduce_sum(tf.square(g_), 1)) # TODO: don't know if reduce_sum dim of 1 is correct?
         self.g = g_ / g_norm
         
