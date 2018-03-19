@@ -156,7 +156,7 @@ class FuNPolicy(object):
         self.w_state_in = [w_c_in, w_h_in]
 
         w_state_in = rnn.rnn_cell.LSTMStateTuple(w_c_in, w_h_in)
-        w_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
+        wÿ5_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
             w_lstm, self.z, initial_state=w_state_in, sequence_length=w_step_size,
             time_major=False)
 
