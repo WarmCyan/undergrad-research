@@ -6,7 +6,11 @@ use_tf100_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.
 
 
 
+# https://github.com/code-terminator/DilatedRNN/blob/master/models/drnn.py
+
+
 EMBEDDING_DIMENSIONALITY = 16
+DILATION_RADIUS = 10
 
 
 
@@ -50,6 +54,43 @@ def linear(x, size, name, initializer=None, bias_init=0):
 def categorical_sample(logits, d):
     value = tf.squeeze(tf.multinomial(logits - tf.reduce_max(logits, [1], keep_dims=True), 1), [1])
     return tf.one_hot(value, d)
+
+
+def dRNN(cell, inputs, rate, initial_state):
+    n_steps = len(inputs)
+
+    if rate < 0 or rate >= n_steps:
+        raise ValueError("bad rate variable")
+
+    # zero pad to make sure the number of inputs can be evenly divided by the rate
+    if (n_steps % rate) != 0:
+        zero_tensor = tf.zeros_like(inputs[0])
+        dilated_n_steps = n_steps // rate + 1 # NOTE: in python // is division with automatic floor
+
+        for i_pad in range(dilated_n_steps * rate - n_stpes):
+            inputs.append(zero_tensor)
+
+    else:
+        dilated_n_steps = n_stepsps // rate
+        
+    # Example:
+    # n_steps is 5, rate is 2, inputs = [x1, x2, x3, x4, x5]
+    # zero-padding --> [x1, x2, x3, x4, x5, 0]
+    # we want to have --> [[x1; x2], [x3; x4], [x_5; 0]]
+    # which the length is the ceiling of n_steps/rate
+    dilated_inputs = [tf.concat(inputs[i * rate(i+1) * rate], axis=0) for i in range(dilated_n_steps)]
+
+    dilated_outputs, final_state = rnn.static_rnn(cell, dilated_inputs, dtype=tf.float32, initial_state=initial_state) # TODO: don't know if this being static is going to cause issues or not, and it's not lstm? But lstm can be passed in?
+    # TODO: is final_state dilated too? Do I have to handle this similar to how dilated_outputs are handled?
+
+    splitted_outputs = [tf.split(output, rate, axis=0) for output in dilated_outputs]
+    unrolled_outputs = [output for sublist in splitted_outputs for output in sublist]
+
+    # remove padded zeros
+    outputs = unrolled_outputs[:n_steps]
+
+    return outputs, final_state
+
 
 class LSTMPolicy(object):
     def __init__(self, ob_space, ac_space):
@@ -120,7 +161,17 @@ class FuNPolicy(object):
         
         # TODO: dilated lstm
         
-        m_lstm_outputs = None # TODO: 
+        m_lstm = rnn.rnn_cell.BasicLSTMCell(size, state_is_tuple=True) # TODO: is tuple state going to be an issue?
+        self.m_state_size = m_lstm.state_size
+        m_c_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.c])
+        m_h_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.h])
+        self.m_state_in = [m_c_in, m_h_in]
+
+        m_state_in = rnn.rnn_cell.LSTMStateTuple(m_c_in, m_h_in)
+        m_lstm_outputs, m_lstm_state = dRNN(m_lstm, self.s, DILATION_RADIUS, m_state_in)
+        
+        
+        #m_lstm_outputs = None # TODO: might have to reshape?
 
         g_ = m_lstm_outputs # NOTE: again, not sure if this is true, also may need to reshape? TODO: only take the last 16? (would have to match EMBEDDING_DIMENSIONALITY in order for cosine similarity to work
         g_norm = tf.sqrt(tf.reduce_sum(tf.square(g_), 1)) # TODO: don't know if reduce_sum dim of 1 is correct?
@@ -135,11 +186,7 @@ class FuNPolicy(object):
         # NOTE: not using linear because no bias
         self.phi_w = tf.get_variable("phi/w", [self.pooled_goals.get_shape()[1], size], initializer=normalized_columns_initializer(1.0))
         self.w = matmul(self.pooled_goals, self.phi_w)
-        
 
-
-        #self.w = 
-        
 
         # WORKER NETWORK
 
@@ -156,7 +203,7 @@ class FuNPolicy(object):
         self.w_state_in = [w_c_in, w_h_in]
 
         w_state_in = rnn.rnn_cell.LSTMStateTuple(w_c_in, w_h_in)
-        wÿ5_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
+        w_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
             w_lstm, self.z, initial_state=w_state_in, sequence_length=w_step_size,
             time_major=False)
 
