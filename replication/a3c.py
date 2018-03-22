@@ -16,10 +16,23 @@ LEARNING_RATE = 1e-4
 ALPHA = .99
 LOCAL_STEPS = 40
 HORIZEN_C = 10
+INTRINSIC_INFLUENCE = .5 # NOTE: from the paper, somewhere between 0 and 1....
 
 
 def discount(x, gamma):
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
+
+# https://gist.github.com/ranarag/77014b952a649dbaf8f47969affdd3bc
+def cosine_sim(x1, x2,name = 'Cosine_loss'):
+    with tf.name_scope(name):
+        x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=1))
+        x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=1))
+        denom =  tf.multiply(x1_val,x2_val)
+        print denom.shape
+        num = tf.reduce_sum(tf.multiply(x1,x2),axis=1)
+        print num.shape
+        return tf.div(num,denom)
+    
 
 def process_rollout(rollout, gamma, lambda_=1.0):
     """
@@ -315,31 +328,57 @@ should be computed.
             self.r = tf.placeholder(tf.float32, [None], name='r') # NOTE: same for both manager and worker, but worker has the additional intrinsic reward # TODO: which has to be calculated here!!!
             
             self.ac = tf.placeholder(tf.float32, [None, env.action_space.n], name="ac")
-            self.adv_w = tf.placeholder(tf.float32, [None], name='adv_w') # NOTE: NO, not getting passed in. has to be calcluated here
+            #self.adv_w = tf.placeholder(tf.float32, [None], name='adv_w') # NOTE: NO, not getting passed in. has to be calcluated here
+            self.v_w = tf.placeholder(tf.flaot32, [None], name='v_w')
 
 
             # NOTE: yes, getting manager advantage passed in
             self.adv_m = tf.placeholder(tf.float32, [None], name='adv_m')
-            self.gt = tf.placeholder(tf.float32, [None, 256], name='gt')
+            self.gt = tf.placeholder(tf.float32, [None, 256], name='gt') # TODO: pretty sure this needs to be an array
+
+            self.g_hist = tf.placeholder(tf.float32, [None, HORIZEN_C], name='g_hist') # TODO: calc in process_rollout
+            self.s_diff = tf.placeholder(tf.float32, [None, HORIZEN_C], name='s_diff') # TODO:: calc in process_rollout
 
 
+            self.g_dist = tf.placeholder(tf.float32, [None], name='g_dist') # TODO: calc in process_rollout (should just be a single cosine similarity calculation)
+
+            # intrinsic reward for worker NOTE: unsure if this cos similarity is correct, got it from SO
+
+            # https://stackoverflow.com/questions/43357732/how-to-calculate-the-cosine-similarity-between-two-tensors
+            #normalize_a = tf.nn.l2_normalize(s_diff,0)        
+            #normalize_b = tf.nn.l2_normalize(g_hist,0)
+            #cos_similarity = tf.reduce_sum(tf.multiply(normalize_a,normalize_b))
             
-
-            # TODO: intrinsic reward for worker
-
-
-
-            # TODO: advantage for worker
+            cos_similarity = cosine_sim(s_diff, g_hist)
             
             
+            self.r_intrinsic = tf.reduce_sum(cos_similarity) / HORIZEN_C
+
+            # advantage for worker
+            self.adv_w = self.r + INTRINSIC_INFLUENCE*self.r_intrinsic + self.v_w
 
 
             # TODO: gradients for g_t
+            gt_loss = tf.reduce_sum(self.g_dist*self.adv_m)
 
+            v_loss_m = .5 * tf.reduce_sum(tf.square(pi.vf - self.r))
+
+            manager_loss = .5 * v_loss_m + gt_loss
+            
+
+            grads_m = tf.gradients(self.manager_loss_loss, pi.var_list_m) # TODO: var list!!!!
+            grads_m, _ = tf.clip_by_global_norm(grads_m, 40.0)
 
             
             # TODO: gradient for worker policy
 
+            log_prob_tf = tf.nn.log_softmax(pi.logits) # TODO: logits isn't correct
+            prob_tf = tf.nn.softmax(pi.logits) # TODO: logits isn't correct
+
+            # TODO: how do you calculate value loss for the worker? (since it's based on both env reward and intrinsic reward)
+
+            pi_loss = -tf.reduce_sum(tf.reduce_sum(log_prob_tf * self.ac, [1]) * self.adv_w)
+            v_loss_w = .5 * reduce_sum
 
 
             
