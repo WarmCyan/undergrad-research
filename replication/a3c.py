@@ -82,7 +82,8 @@ once it has processed enough steps.
     def __init__(self):
         self.percepts = []
         self.states = []
-        self.m_states = [] # NOTE: this is s_t for the manager
+        self.m_states = [] # NOTE: this is s_t for the manager (latent states)
+        self.m_states_c = []
         self.actions = []
         self.rewards = []
         self.values_w = []
@@ -93,10 +94,11 @@ once it has processed enough steps.
         self.features_m = [] 
         self.goals = []
 
-    def add(self, percept, state, m_state, action, reward, value_w, value_m, terminal, features_w, features_m, goals):
+    def add(self, percept, state, m_state, m_state_c, action, reward, value_w, value_m, terminal, features_w, features_m, goals):
         self.percepts += [percept]
         self.states += [state]
         self.m_states += [m_state]
+        self.m_states_c += [m_state_c]
         self.actions += [action]
         self.rewards += [reward]
         self.values_w += [value_w]
@@ -111,11 +113,12 @@ once it has processed enough steps.
         self.percepts.extend(other.percepts)
         self.states.extend(other.states)
         self.m_states.extend(other.m_states)
+        self.m_states_c.extend(other.m_states_c)
         self.actions.extend(other.actions)
         self.rewards.extend(other.rewards)
         self.values_w.extend(other.values_w)
         self.values_m.extend(other.values_m)
-        self.r = other.r
+        self.r = other.r # TODO: was this already like this? Or did I do this?
         self.terminal = other.terminal
         self.features_w.extend(other.features_w)
         self.features_m.extend(other.features_m)
@@ -309,14 +312,41 @@ should be computed.
                 pi.global_step = self.global_step
 
 
-            self.r = tf.placeholder(tf.float32, [None], name='r') # NOTE: same for both manager and worker, but worker has the additional intrinsic reward
+            self.r = tf.placeholder(tf.float32, [None], name='r') # NOTE: same for both manager and worker, but worker has the additional intrinsic reward # TODO: which has to be calculated here!!!
             
             self.ac = tf.placeholder(tf.float32, [None, env.action_space.n], name="ac")
-            self.adv_w = tf.placeholder(tf.float32, [None], name='adv_w')
+            self.adv_w = tf.placeholder(tf.float32, [None], name='adv_w') # NOTE: NO, not getting passed in. has to be calcluated here
 
 
+            # NOTE: yes, getting manager advantage passed in
             self.adv_m = tf.placeholder(tf.float32, [None], name='adv_m')
             self.gt = tf.placeholder(tf.float32, [None, 256], name='gt')
+
+
+            
+
+            # TODO: intrinsic reward for worker
+
+
+
+            # TODO: advantage for worker
+            
+            
+
+
+            # TODO: gradients for g_t
+
+
+            
+            # TODO: gradient for worker policy
+
+
+
+            
+
+
+
+            
 
 
 

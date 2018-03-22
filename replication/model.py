@@ -156,7 +156,8 @@ class FuNPolicy(object):
         
         # MANAGER NETWORK
 
-        self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
+        #self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
+        self.s = tf.nn.elu(linear(self.z, size, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
 
         
         # TODO: dilated lstm
