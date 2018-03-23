@@ -32,14 +32,15 @@ def cosine_sim(x1, x2,name = 'Cosine_loss'):
         num = tf.reduce_sum(tf.multiply(x1,x2),axis=1)
         print num.shape
         return tf.div(num,denom)
+
+
+    # TODO: verify this (probably axis is actually 2, not 1)
     
 
 def process_rollout(rollout, gamma, lambda_=1.0):
     """
 given a rollout, compute its returns and the advantage
 """
-
-
     # need: intrinsic reward, both batch advantages
 
     batch_states = np.asarray(rollout.states)
@@ -57,6 +58,22 @@ given a rollout, compute its returns and the advantage
     batch_reward = discount(rewards_plus_v, gamma)[:-1] # NOTE: target_v, right?
 
     delta_t_m = rewards + gamma*pred_v_m[1:] - pred_v_m[:-1]
+    batch_adv_m = discount(delta_t_m, gamma*lambda_)
+
+    # TODO: fancy stacking of goals for g_hist
+
+    # TODO: calculate horizen state differnecs
+
+    # TODO: calculate g_dist, single cosine similarity between goals and latent states
+
+
+    # NOTE: pretty sure the cosine_sim might still be along wrong dimension down below?
+
+
+    features_m = rollout.features_m[0]
+    features_w = rollout.features_w[0]
+
+    return Batch(batch_states, batch_actions, batch_reward, batch_adv_m, pred_v_w, goals, '''g_hist''', '''s_diff''', '''g_dist''' , rollout.terminal, features_w, features_m)
 
     # calculate intrinsic reward TODO: this can't efficiently be done here, throw calculations into tensorflow loss graph
     #reward_intrinsic = 0
@@ -85,7 +102,8 @@ given a rollout, compute its returns and the advantage
     return Batch(batch_si, batch_a, batch_adv, batch_r, rollout.terminal, features)
     '''
 
-Batch = namedtuple("Batch", ["si", "a", "adv", "r", "terminal", "features"])
+#Batch = namedtuple("Batch", ["si", "a", "adv", "r", "terminal", "features"])
+Batch = namedtuple("Batch", ["si", "ac", "r", "adv_m", "v_w", "gt", "g_hist", "s_diff", "g_dist", "terminal", "features_w", "features_m"])
 
 class PartialRollout(object):
     """
@@ -334,8 +352,9 @@ should be computed.
 
             # NOTE: yes, getting manager advantage passed in
             self.adv_m = tf.placeholder(tf.float32, [None], name='adv_m')
-            self.gt = tf.placeholder(tf.float32, [None, 256], name='gt') # TODO: pretty sure this needs to be an array
+            self.gt = tf.placeholder(tf.float32, [None, 256], name='gt') # TODO: pretty sure this needs to be an array. update: no not really, g_hist takes care of that
 
+            # TODO: wait, shouldn't these be HORIZEN_C, 256?
             self.g_hist = tf.placeholder(tf.float32, [None, HORIZEN_C], name='g_hist') # TODO: calc in process_rollout
             self.s_diff = tf.placeholder(tf.float32, [None, HORIZEN_C], name='s_diff') # TODO:: calc in process_rollout
 
@@ -361,12 +380,12 @@ should be computed.
             # TODO: gradients for g_t
             gt_loss = tf.reduce_sum(self.g_dist*self.adv_m)
 
-            v_loss_m = .5 * tf.reduce_sum(tf.square(pi.vf - self.r))
+            v_loss_m = .5 * tf.reduce_sum(tf.square(pi.m_vf - self.r))
 
             manager_loss = .5 * v_loss_m + gt_loss
             
 
-            grads_m = tf.gradients(self.manager_loss_loss, pi.var_list_m) # TODO: var list!!!!
+            grads_m = tf.gradients(manager_loss, pi.var_list_m) # TODO: var list!!!!
             grads_m, _ = tf.clip_by_global_norm(grads_m, 40.0)
 
             
@@ -378,10 +397,33 @@ should be computed.
             # TODO: how do you calculate value loss for the worker? (since it's based on both env reward and intrinsic reward)
 
             pi_loss = -tf.reduce_sum(tf.reduce_sum(log_prob_tf * self.ac, [1]) * self.adv_w)
-            v_loss_w = .5 * reduce_sum
+            v_loss_w = .5 * tf.reduce_sum(tf.square(pi.w_vf - self.r))
+
+            # TODO: do I still use entropy? I assume no?
+            worker_loss = .5 * v_loss_w + pi_loss
+
+            grads_w = tf.gradients(worker_loss, pi.var_list_w)  # TODO: var list!!!
+            grads_w, _ = tf.clip_by_global_norm(grads_w, 40.0)
+
+            # TODO: logging/summaries
 
 
+
+            # copy weights from param server to local model
+            self.sync_m = tf.group(*[v1.assign(v2) for v1, v2 in zip(pi.var_list_m, self.network.var_list_m)])
+            self.sync_w = tf.group(*[v1.assign(v2) for v1, v2 in zip(pi.var_list_w, self.network.var_list_w)])
+
+            grads_and_vars_m = list(zip(grads_m, self.network.var_list_m))
+            grads_and_vars_w = list(zip(grads_w, self.network.var_list_w))
+            inc_step = self.global_step.assign_add(tf.shape(pi.x)[0])
             
+
+            opt_m = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
+            opt_w = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
+
+            self.train_op = tf.group(opt_m.apply_gradients(grads_and_vars_m), opt_w.apply_gradients(grads_and_vars_w), inc_step)
+            self.summary_writer = None
+            self.local_steps = 0
 
 
 
