@@ -64,7 +64,7 @@ given a rollout, compute its returns and the advantage
 
     # TODO: calculate horizen state differnecs
 
-    # TODO: calculate g_dist, single cosine similarity between goals and latent states
+    # TODO: calculate g_dist, single cosine similarity between goals and latent states (but for each entry, so end with an array, right?
 
 
     # NOTE: pretty sure the cosine_sim might still be along wrong dimension down below?
@@ -355,8 +355,8 @@ should be computed.
             self.gt = tf.placeholder(tf.float32, [None, 256], name='gt') # TODO: pretty sure this needs to be an array. update: no not really, g_hist takes care of that
 
             # TODO: wait, shouldn't these be HORIZEN_C, 256?
-            self.g_hist = tf.placeholder(tf.float32, [None, HORIZEN_C], name='g_hist') # TODO: calc in process_rollout
-            self.s_diff = tf.placeholder(tf.float32, [None, HORIZEN_C], name='s_diff') # TODO:: calc in process_rollout
+            self.g_hist = tf.placeholder(tf.float32, [None, HORIZEN_C, 256], name='g_hist') # TODO: calc in process_rollout
+            self.s_diff = tf.placeholder(tf.float32, [None, HORIZEN_C, 256], name='s_diff') # TODO:: calc in process_rollout
 
 
             self.g_dist = tf.placeholder(tf.float32, [None], name='g_dist') # TODO: calc in process_rollout (should just be a single cosine similarity calculation)
@@ -374,7 +374,7 @@ should be computed.
             self.r_intrinsic = tf.reduce_sum(cos_similarity) / HORIZEN_C
 
             # advantage for worker
-            self.adv_w = self.r + INTRINSIC_INFLUENCE*self.r_intrinsic + self.v_w
+            self.adv_w = self.r + INTRINSIC_INFLUENCE*self.r_intrinsic + self.v_w # [None] (scalar result)
 
 
             # TODO: gradients for g_t
