@@ -23,16 +23,16 @@ def discount(x, gamma):
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
 
 # https://gist.github.com/ranarag/77014b952a649dbaf8f47969affdd3bc
-def cosine_sim(x1, x2,name = 'Cosine_loss'):
+#def cosine_sim(x1, x2,name = 'Cosine_loss'): # axis is 1 by default
+def cosine_sim(x1, x2,name = 'Cosine_loss', axis):
     with tf.name_scope(name):
-        x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=1))
-        x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=1))
+        x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=axis))
+        x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=axis))
         denom =  tf.multiply(x1_val,x2_val)
         print denom.shape
-        num = tf.reduce_sum(tf.multiply(x1,x2),axis=1)
+        num = tf.reduce_sum(tf.multiply(x1,x2),axis=axis)
         print num.shape
         return tf.div(num,denom)
-
 
     # TODO: verify this (probably axis is actually 2, not 1)
     
@@ -60,11 +60,22 @@ given a rollout, compute its returns and the advantage
     delta_t_m = rewards + gamma*pred_v_m[1:] - pred_v_m[:-1]
     batch_adv_m = discount(delta_t_m, gamma*lambda_)
 
-    # TODO: fancy stacking of goals for g_hist
+    # TODO: fancy stacking of goals for g_hist # NOTE: this is still probably super slow
+    goal_hist_stack = [goals]
+    for i in range(HORIZEN_C):
+        goal_hist_stack.append(np.vstack(np.zeros((1,3)), goal_hist_stack[-1][:-1]))
+    goal_hist = np.flip(np.rot90(np.dstack(goal_hist_stack), 3, (1,2)), axis=2)[:,1:]
 
-    # TODO: calculate horizen state differnecs
+    # TODO: calculate horizen state differnecs # NOTE: this is still probably super slow
+    lstate_hist_stack = [latent_states]
+    for i in range(HORIZEN_C):
+        lstate_hist_stack.append(np.vstack(np.zeros((1,3)), lstate_hist_stack[-1][:-1]))
+    lstate_hist = np.flip(np.rot90(np.dstack(lstate_hist_stack), 3, (1,2)), axis=2)[:,1:]
+    latent_states_sub = np.rot90(np.repeat(latent_states[:,:,np.newaxis], HORIZEN_C-1, axis=2), 1, (1,2)) 
+    state_diffs = latent_states_sub - lstate_hist
 
     # TODO: calculate g_dist, single cosine similarity between goals and latent states (but for each entry, so end with an array, right?
+    # NOTE: no, actually just do this in tensorflow since we already have a thing for it
 
 
     # NOTE: pretty sure the cosine_sim might still be along wrong dimension down below?
@@ -73,7 +84,7 @@ given a rollout, compute its returns and the advantage
     features_m = rollout.features_m[0]
     features_w = rollout.features_w[0]
 
-    return Batch(batch_states, batch_actions, batch_reward, batch_adv_m, pred_v_w, goals, '''g_hist''', '''s_diff''', '''g_dist''' , rollout.terminal, features_w, features_m)
+    return Batch(batch_states, batch_actions, batch_reward, batch_adv_m, pred_v_w, goals, goal_hist, state_diffs, latent_states, rollout.terminal, features_w, features_m)
 
     # calculate intrinsic reward TODO: this can't efficiently be done here, throw calculations into tensorflow loss graph
     #reward_intrinsic = 0
@@ -103,7 +114,7 @@ given a rollout, compute its returns and the advantage
     '''
 
 #Batch = namedtuple("Batch", ["si", "a", "adv", "r", "terminal", "features"])
-Batch = namedtuple("Batch", ["si", "ac", "r", "adv_m", "v_w", "gt", "g_hist", "s_diff", "g_dist", "terminal", "features_w", "features_m"])
+Batch = namedtuple("Batch", ["si", "ac", "r", "adv_m", "v_w", "gt", "g_hist", "s_diff", "latent_states", "terminal", "features_w", "features_m"])
 
 class PartialRollout(object):
     """
@@ -352,14 +363,17 @@ should be computed.
 
             # NOTE: yes, getting manager advantage passed in
             self.adv_m = tf.placeholder(tf.float32, [None], name='adv_m')
-            self.gt = tf.placeholder(tf.float32, [None, 256], name='gt') # TODO: pretty sure this needs to be an array. update: no not really, g_hist takes care of that
+            self.gt = tf.placeholder(tf.float32, [None, 256], name='gt') 
 
             # TODO: wait, shouldn't these be HORIZEN_C, 256?
             self.g_hist = tf.placeholder(tf.float32, [None, HORIZEN_C, 256], name='g_hist') # TODO: calc in process_rollout
             self.s_diff = tf.placeholder(tf.float32, [None, HORIZEN_C, 256], name='s_diff') # TODO:: calc in process_rollout
 
 
-            self.g_dist = tf.placeholder(tf.float32, [None], name='g_dist') # TODO: calc in process_rollout (should just be a single cosine similarity calculation)
+            #self.g_dist = tf.placeholder(tf.float32, [None], name='g_dist') # TODO: calc in process_rollout (should just be a single cosine similarity calculation)
+            self.latent_states = tf.placeholder(tf.float32, [None, 256], name='latent_states')
+
+            self.g_dist = cosine_sim(self.latent_states, self.gt, 1)
 
             # intrinsic reward for worker NOTE: unsure if this cos similarity is correct, got it from SO
 
@@ -368,7 +382,7 @@ should be computed.
             #normalize_b = tf.nn.l2_normalize(g_hist,0)
             #cos_similarity = tf.reduce_sum(tf.multiply(normalize_a,normalize_b))
             
-            cos_similarity = cosine_sim(s_diff, g_hist)
+            cos_similarity = cosine_sim(s_diff, g_hist, 2)
             
             
             self.r_intrinsic = tf.reduce_sum(cos_similarity) / HORIZEN_C
@@ -531,6 +545,23 @@ server.
             fetches = [self.train_op, self.global_step]
 
         feed_dict = {
+                self.local_network.x: batch.si, 
+                self.ac: batch.ac,
+                self.v_w: batch.v_w,
+                self.adv_m: batch.adv_m,
+                self.gt: batch.gt,
+                self.g_hist: batch.g_hist,
+                self.latent_states: batch.latent_states,
+                self.s_diff: batch.s_diff,
+                self.local_network.m_state_in[0]: batch.features_m[0],
+                self.local_network.m_state_in[1]: batch.features_m[1],
+                self.local_network.w_state_in[0]: batch.features_w[0],
+                self.local_network.w_state_in[1]: batch.features_w[1]
+        }
+
+
+        '''
+        feed_dict = {
             self.local_network.x: batch.si,
             self.ac: batch.a,
             self.adv: batch.adv,
@@ -538,6 +569,7 @@ server.
             self.local_network.state_in[0]: batch.features[0],
             self.local_network.state_in[1]: batch.features[1],
         }
+        '''
 
         fetched = sess.run(fetches, feed_dict=feed_dict)
 
