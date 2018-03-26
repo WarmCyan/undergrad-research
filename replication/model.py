@@ -153,70 +153,79 @@ class FuNPolicy(object):
 
         size = 256
         
-        
+        scope_name = tf.get_variable_scope().name
+
         # MANAGER NETWORK
+        with tf.variable_scope(scope_name + "_m"):
 
-        #self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
-        self.s = tf.nn.elu(linear(self.z, size, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
+            #self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
+            self.s = tf.nn.elu(linear(self.z, size, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
 
-        
-        # TODO: dilated lstm
-        
-        m_lstm = rnn.rnn_cell.BasicLSTMCell(size, state_is_tuple=True) # TODO: is tuple state going to be an issue?
-        self.m_state_size = m_lstm.state_size
-        m_c_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.c])
-        m_h_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.h])
-        self.m_state_in = [m_c_in, m_h_in]
+            
+            # TODO: dilated lstm
+            
+            m_lstm = rnn.rnn_cell.BasicLSTMCell(size, state_is_tuple=True) # TODO: is tuple state going to be an issue?
+            self.m_state_size = m_lstm.state_size
+            m_c_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.c])
+            m_h_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.h])
+            self.m_state_in = [m_c_in, m_h_in]
 
-        m_state_in = rnn.rnn_cell.LSTMStateTuple(m_c_in, m_h_in)
-        m_lstm_outputs, m_lstm_state = dRNN(m_lstm, self.s, DILATION_RADIUS, m_state_in)
-        
-        
-        #m_lstm_outputs = None # TODO: might have to reshape?
+            m_state_in = rnn.rnn_cell.LSTMStateTuple(m_c_in, m_h_in)
+            m_lstm_outputs, m_lstm_state = dRNN(m_lstm, self.s, DILATION_RADIUS, m_state_in)
+            
+            
+            #m_lstm_outputs = None # TODO: might have to reshape?
 
-        g_ = m_lstm_outputs # NOTE: again, not sure if this is true, also may need to reshape? TODO: only take the last 16? (would have to match EMBEDDING_DIMENSIONALITY in order for cosine similarity to work
-        g_norm = tf.sqrt(tf.reduce_sum(tf.square(g_), 1)) # TODO: don't know if reduce_sum dim of 1 is correct?
-        self.g = g_ / g_norm
-        
-        self.m_vf = tf.reshape(linear(m_lstm_outputs, 1, "m_value", normalized_columns_initializer(1.0)), [-1])
+            g_ = m_lstm_outputs # NOTE: again, not sure if this is true, also may need to reshape? TODO: only take the last 16? (would have to match EMBEDDING_DIMENSIONALITY in order for cosine similarity to work
+            g_norm = tf.sqrt(tf.reduce_sum(tf.square(g_), 1)) # TODO: don't know if reduce_sum dim of 1 is correct?
+            self.g = g_ / g_norm
+            
+            self.m_vf = tf.reshape(linear(m_lstm_outputs, 1, "m_value", normalized_columns_initializer(1.0)), [-1])
 
 
-        self.pooled_goals = reduce_sum(self.g, 0) # TODO: which dimension are these pooled???
-        
-        # NOTE: keep in mind phi is technically trained as part of worker
-        # NOTE: not using linear because no bias
-        self.phi_w = tf.get_variable("phi/w", [self.pooled_goals.get_shape()[1], size], initializer=normalized_columns_initializer(1.0))
-        self.w = matmul(self.pooled_goals, self.phi_w)
+            # TODO: stop gradient?
+            self.pooled_goals = reduce_sum(self.g, 0) # TODO: which dimension are these pooled???
+            
+            # NOTE: keep in mind phi is technically trained as part of worker
+            # NOTE: not using linear because no bias
+            self.phi_w = tf.get_variable("phi/w", [self.pooled_goals.get_shape()[1], size], initializer=normalized_columns_initializer(1.0))
+            self.w = matmul(self.pooled_goals, self.phi_w)
 
+
+
+        self.var_list_m = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "_m")
 
         # WORKER NETWORK
+        with tf.variable_scope(scope_name + "_w"):
 
-        w_lstm = rnn.rnn_cell.BasicLSTMCell(size, state_is_tuple=True)
-        self.w_state_size = w_lstm.state_size
-        stepsize = tf.shape(self.z)[:1]
+            w_lstm = rnn.rnn_cell.BasicLSTMCell(size, state_is_tuple=True)
+            self.w_state_size = w_lstm.state_size
+            stepsize = tf.shape(self.z)[:1]
 
-        w_c_init = np.zeros((1, w_lstm.state_size.c), np.float32)
-        w_h_init = np.zeros((1, w_lstm.state_size.h), np.float32)
-        self.w_state_init = [w_c_init, w_h_init]
+            w_c_init = np.zeros((1, w_lstm.state_size.c), np.float32)
+            w_h_init = np.zeros((1, w_lstm.state_size.h), np.float32)
+            self.w_state_init = [w_c_init, w_h_init]
 
-        w_c_in = tf.placeholder(tf.float32, [1, w_lstm.state_size.c])
-        w_h_in = tf.placeholder(tf.float32, [1, w_lstm.state_size.h])
-        self.w_state_in = [w_c_in, w_h_in]
+            w_c_in = tf.placeholder(tf.float32, [1, w_lstm.state_size.c])
+            w_h_in = tf.placeholder(tf.float32, [1, w_lstm.state_size.h])
+            self.w_state_in = [w_c_in, w_h_in]
 
-        w_state_in = rnn.rnn_cell.LSTMStateTuple(w_c_in, w_h_in)
-        w_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
-            w_lstm, self.z, initial_state=w_state_in, sequence_length=w_step_size,
-            time_major=False)
+            w_state_in = rnn.rnn_cell.LSTMStateTuple(w_c_in, w_h_in)
+            w_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
+                w_lstm, self.z, initial_state=w_state_in, sequence_length=w_step_size,
+                time_major=False)
 
-        w_lstm_c, w_lstm_h = w_lstm_state
-        w_lstm_outputs = tf.reshape(w_lstm_outputs, [-1, size])
-        self.w_state_out = [w_lstm_c[:1, :], w_lstm_h[:1, :]]
+            w_lstm_c, w_lstm_h = w_lstm_state
+            w_lstm_outputs = tf.reshape(w_lstm_outputs, [-1, size])
+            self.w_state_out = [w_lstm_c[:1, :], w_lstm_h[:1, :]]
 
-        # NOTE: is U the direct lstm output? or is there in fact a linear layer inbetween? Idt there is
-        self.U = linear(w_lstm_outputs, ac_space, "U", normalized_columns_initializer(0.01))
+            # NOTE: is U the direct lstm output? or is there in fact a linear layer inbetween? Idt there is
+            self.U = linear(w_lstm_outputs, ac_space, "U", normalized_columns_initializer(0.01))
 
-        # NOTE: I assume this is where value is calculated, but I don't actually know
-        self.w_vf = tf.reshape(linear(w_lstm_outputs, 1, "w_value", normalized_columns_initializer(1.0)), [-1])
-        
-        #self.action = tf.softmax(tf.matmul(self.U, self.w))
-        self.pi = tf.matmul(self.U, self.w)
+            # NOTE: I assume this is where value is calculated, but I don't actually know
+            self.w_vf = tf.reshape(linear(w_lstm_outputs, 1, "w_value", normalized_columns_initializer(1.0)), [-1])
+            
+            #self.action = tf.softmax(tf.matmul(self.U, self.w))
+            self.pi = tf.matmul(self.U, self.w)
+            
+        self.var_list_w = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "_w")
