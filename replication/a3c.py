@@ -2,7 +2,7 @@ from __future__ import print_function
 from collections import namedtuple
 import numpy as np
 import tensorflow as tf
-from model import LSTMPolicy
+from model import LSTMPolicy, FuNPolicy
 import six.moves.queue as queue
 import scipy.signal
 import scipy.spatial
@@ -24,14 +24,14 @@ def discount(x, gamma):
 
 # https://gist.github.com/ranarag/77014b952a649dbaf8f47969affdd3bc
 #def cosine_sim(x1, x2,name = 'Cosine_loss'): # axis is 1 by default
-def cosine_sim(x1, x2,name = 'Cosine_loss', axis):
+def cosine_sim(x1, x2,  axis, name='Cosine_loss'):
     with tf.name_scope(name):
         x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=axis))
         x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=axis))
         denom =  tf.multiply(x1_val,x2_val)
-        print denom.shape
+        print(denom.shape)
         num = tf.reduce_sum(tf.multiply(x1,x2),axis=axis)
-        print num.shape
+        print(num.shape)
         return tf.div(num,denom)
 
     # TODO: verify this (probably axis is actually 2, not 1)

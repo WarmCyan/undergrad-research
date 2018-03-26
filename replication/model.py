@@ -47,6 +47,8 @@ def conv2d(x, num_filters, name, filter_size=(3, 3), stride=(1, 1), pad="SAME", 
         return tf.nn.conv2d(x, w, stride_shape, pad) + b
 
 def linear(x, size, name, initializer=None, bias_init=0):
+    print("x shape for " + str(name))
+    print(x.get_shape())
     w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=initializer)
     b = tf.get_variable(name + "/b", [size], initializer=tf.constant_initializer(bias_init))
     return tf.matmul(x, w) + b
@@ -146,9 +148,14 @@ class LSTMPolicy(object):
 
 class FuNPolicy(object):
     def __init__(self, ob_space, ac_space):
-        self.x = tf.placeholder(tf.float32, [None] + list(ob_space))
+        print("Ob space:")
+        print(ob_space)
+        self.x = x = tf.placeholder(tf.float32, [None] + list(ob_space))
 
-        self.z = tf.expand_dims(flatten(tf.nn.elu(conv2d(self.x, 32,  "l{}".format(i+1), [3,3], [2,2]))), [0])
+        for i in range(4):
+            x = tf.nn.elu(conv2d(x, 32, "l{}".format(i + 1), [3,3], [2,2]))
+        x = tf.expand_dims(flatten(x), [0])            
+        self.z = x
 
 
         size = 256
