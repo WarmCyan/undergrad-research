@@ -58,9 +58,29 @@ def categorical_sample(logits, d):
     return tf.one_hot(value, d)
 
 
+def _rnn_reformat(x, input_dims, n_steps):
+    """
+    This function reformat input to the shape that standard RNN can take.
+
+    Inputs:
+        x -- a tensor of shape (batch_size, n_steps, input_dims).
+    Outputs:
+        x_reformat -- a list of 'n_steps' tenosrs, each has shape (batch_size, input_dims).
+    """
+    # permute batch_size and n_steps
+    x_ = tf.transpose(x, [1, 0, 2])
+    # reshape to (n_steps*batch_size, input_dims)
+    x_ = tf.reshape(x_, [-1, input_dims])
+    # split to get a list of 'n_steps' tensors of shape (batch_size, input_dims)
+    x_reformat = tf.split(x_, n_steps, 0)
+
+    return x_reformat
+
 def dRNN(cell, inputs, rate, initial_state):
     n_steps = len(inputs)
 
+    print("nsteps:",n_steps)
+    print("rate:",rate)
     if rate < 0 or rate >= n_steps:
         raise ValueError("bad rate variable")
 
@@ -73,14 +93,14 @@ def dRNN(cell, inputs, rate, initial_state):
             inputs.append(zero_tensor)
 
     else:
-        dilated_n_steps = n_stepsps // rate
+        dilated_n_steps = n_steps // rate
         
     # Example:
     # n_steps is 5, rate is 2, inputs = [x1, x2, x3, x4, x5]
     # zero-padding --> [x1, x2, x3, x4, x5, 0]
     # we want to have --> [[x1; x2], [x3; x4], [x_5; 0]]
     # which the length is the ceiling of n_steps/rate
-    dilated_inputs = [tf.concat(inputs[i * rate(i+1) * rate], axis=0) for i in range(dilated_n_steps)]
+    dilated_inputs = [tf.concat(inputs[i * rate:(i+1) * rate], axis=0) for i in range(dilated_n_steps)]
 
     dilated_outputs, final_state = rnn.static_rnn(cell, dilated_inputs, dtype=tf.float32, initial_state=initial_state) # TODO: don't know if this being static is going to cause issues or not, and it's not lstm? But lstm can be passed in?
     # TODO: is final_state dilated too? Do I have to handle this similar to how dilated_outputs are handled?
@@ -147,15 +167,23 @@ class LSTMPolicy(object):
 
 
 class FuNPolicy(object):
-    def __init__(self, ob_space, ac_space):
+    def __init__(self, ob_space, ac_space, local_steps):
         print("Ob space:")
         print(ob_space)
         self.x = x = tf.placeholder(tf.float32, [None] + list(ob_space))
 
         for i in range(4):
             x = tf.nn.elu(conv2d(x, 32, "l{}".format(i + 1), [3,3], [2,2]))
-        x = tf.expand_dims(flatten(x), [0])            
-        self.z = x
+
+        
+
+        print("x:")
+        print(x.shape)
+        #x = tf.expand_dims(flatten(x), [0])            
+        #self.z = tf.reshape(x, [-1, 256])
+        self.z = tf.reshape(x, [-1, 288])
+        print("z:")
+        print(self.z.shape)
 
 
         size = 256
@@ -167,18 +195,23 @@ class FuNPolicy(object):
 
             #self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
             self.s = tf.nn.elu(linear(self.z, size, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
+            self.s_expanded = tf.expand_dims(self.s, [0])
 
             
             # TODO: dilated lstm
             
-            m_lstm = rnn.rnn_cell.BasicLSTMCell(size, state_is_tuple=True) # TODO: is tuple state going to be an issue?
+            m_lstm = rnn.BasicLSTMCell(size, state_is_tuple=True) # TODO: is tuple state going to be an issue?
             self.m_state_size = m_lstm.state_size
             m_c_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.c])
             m_h_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.h])
             self.m_state_in = [m_c_in, m_h_in]
 
-            m_state_in = rnn.rnn_cell.LSTMStateTuple(m_c_in, m_h_in)
-            m_lstm_outputs, m_lstm_state = dRNN(m_lstm, self.s, DILATION_RADIUS, m_state_in)
+            m_state_in = rnn.LSTMStateTuple(m_c_in, m_h_in)
+            #reformatted = _rnn_reformat(self.s_expanded, 1, local_steps)
+            reformatted = _rnn_reformat(self.s_expanded, 256, local_steps) # TODO: no idea if 256 is correct. Default is 1?
+            print("reformatted: ")
+            print(reformatted)
+            m_lstm_outputs, m_lstm_state = dRNN(m_lstm, reformatted, DILATION_RADIUS, m_state_in) # TODO: dunno if the input_dims of 1 is correct? (it was the default from the sample code)
             
             
             #m_lstm_outputs = None # TODO: might have to reshape?
@@ -217,9 +250,12 @@ class FuNPolicy(object):
             w_h_in = tf.placeholder(tf.float32, [1, w_lstm.state_size.h])
             self.w_state_in = [w_c_in, w_h_in]
 
+            self.z_alt = tf.expand_dims(flatten(self.x), [0])
+            self.w_step_size = tf.shape(self.x)[:1] # TODO: this might actually be self.x?
+
             w_state_in = rnn.rnn_cell.LSTMStateTuple(w_c_in, w_h_in)
             w_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
-                w_lstm, self.z, initial_state=w_state_in, sequence_length=w_step_size,
+                w_lstm, self.z_alt, initial_state=w_state_in, sequence_length=w_step_size,
                 time_major=False)
 
             w_lstm_c, w_lstm_h = w_lstm_state

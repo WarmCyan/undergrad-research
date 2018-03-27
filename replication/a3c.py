@@ -344,13 +344,13 @@ should be computed.
         worker_device = "/job:worker/task:{}/cpu:0".format(task)
         with tf.device(tf.train.replica_device_setter(1, worker_device=worker_device)):
             with tf.variable_scope("global"):
-                self.network = FuNPolicy(env.observation_space.shape, env.action_space.n)
+                self.network = FuNPolicy(env.observation_space.shape, env.action_space.n, LOCAL_STEPS)
                 self.global_step = tf.get_variable("global_step", [], tf.int32, initializer=tf.constant_initializer(0, dtype=tf.int32),
                                                    trainable=False)
 
         with tf.device(worker_device):
             with tf.variable_scope("local"):
-                self.local_network = pi = FuNPolicy(env.observation_space.shape, env.action_space.n)
+                self.local_network = pi = FuNPolicy(env.observation_space.shape, env.action_space.n, LOCAL_STEPS)
                 pi.global_step = self.global_step
 
 
