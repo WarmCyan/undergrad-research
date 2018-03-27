@@ -86,6 +86,7 @@ def dRNN(cell, inputs, rate, initial_state):
 
     # zero pad to make sure the number of inputs can be evenly divided by the rate
     if (n_steps % rate) != 0:
+        print("PADDING")
         zero_tensor = tf.zeros_like(inputs[0])
         dilated_n_steps = n_steps // rate + 1 # NOTE: in python // is division with automatic floor
 
@@ -93,7 +94,11 @@ def dRNN(cell, inputs, rate, initial_state):
             inputs.append(zero_tensor)
 
     else:
+        print("No padding necessary")
         dilated_n_steps = n_steps // rate
+
+    print("Dilated:")
+    print(dilated_n_steps)
         
     # Example:
     # n_steps is 5, rate is 2, inputs = [x1, x2, x3, x4, x5]
@@ -102,8 +107,13 @@ def dRNN(cell, inputs, rate, initial_state):
     # which the length is the ceiling of n_steps/rate
     dilated_inputs = [tf.concat(inputs[i * rate:(i+1) * rate], axis=0) for i in range(dilated_n_steps)]
 
+    print("inputs:")
+    print(dilated_inputs)
+
     dilated_outputs, final_state = rnn.static_rnn(cell, dilated_inputs, dtype=tf.float32, initial_state=initial_state) # TODO: don't know if this being static is going to cause issues or not, and it's not lstm? But lstm can be passed in?
     # TODO: is final_state dilated too? Do I have to handle this similar to how dilated_outputs are handled?
+
+    print(dilated_outputs)
 
     splitted_outputs = [tf.split(output, rate, axis=0) for output in dilated_outputs]
     unrolled_outputs = [output for sublist in splitted_outputs for output in sublist]
@@ -194,8 +204,8 @@ class FuNPolicy(object):
         with tf.variable_scope(scope_name + "_m"):
 
             #self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
-            self.s = tf.nn.elu(linear(self.z, size, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
-            self.s_expanded = tf.expand_dims(self.s, [0])
+            self.s = tf.nn.elu(linear(self.z, size, "mspace", normalized_columns_initializer(0.01))) 
+            self.s_expanded = tf.expand_dims(self.s, 2) # NOTE: this used to be 0, not 2
 
             
             # TODO: dilated lstm
@@ -207,8 +217,15 @@ class FuNPolicy(object):
             self.m_state_in = [m_c_in, m_h_in]
 
             m_state_in = rnn.LSTMStateTuple(m_c_in, m_h_in)
-            #reformatted = _rnn_reformat(self.s_expanded, 1, local_steps)
-            reformatted = _rnn_reformat(self.s_expanded, 256, local_steps) # TODO: no idea if 256 is correct. Default is 1?
+
+            # NOTE: expanded needs to be in shape (batch_size [?], n_steps [10{DILATION_RADIUS}], input_dims [1??])
+            # (?, 256, 1)
+            print("regular size:")
+            print(self.s.shape)
+            print("expanded size:")
+            print(self.s_expanded.shape)
+            reformatted = _rnn_reformat(self.s_expanded, 1, local_steps)
+            #reformatted = _rnn_reformat(self.s_expanded, 256, local_steps) # TODO: no idea if 256 is correct. Default is 1?
             print("reformatted: ")
             print(reformatted)
             m_lstm_outputs, m_lstm_state = dRNN(m_lstm, reformatted, DILATION_RADIUS, m_state_in) # TODO: dunno if the input_dims of 1 is correct? (it was the default from the sample code)
