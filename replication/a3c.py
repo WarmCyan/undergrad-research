@@ -126,10 +126,8 @@ a piece of a complete rollout.  We run our agent, and process its experience
 once it has processed enough steps.
 """
     def __init__(self):
-        self.percepts = []
         self.states = []
         self.m_states = [] # NOTE: this is s_t for the manager (latent states)
-        self.m_states_c = []
         self.actions = []
         self.rewards = []
         self.values_w = []
@@ -140,11 +138,9 @@ once it has processed enough steps.
         self.features_m = [] 
         self.goals = []
 
-    def add(self, percept, state, m_state, m_state_c, action, reward, value_w, value_m, terminal, features_w, features_m, goals):
-        self.percepts += [percept]
+    def add(self, state, m_state, action, reward, value_w, value_m, terminal, features_w, features_m, goals):
         self.states += [state]
         self.m_states += [m_state]
-        self.m_states_c += [m_state_c]
         self.actions += [action]
         self.rewards += [reward]
         self.values_w += [value_w]
@@ -156,10 +152,8 @@ once it has processed enough steps.
 
     def extend(self, other):
         assert not self.terminal
-        self.percepts.extend(other.percepts)
         self.states.extend(other.states)
         self.m_states.extend(other.m_states)
-        self.m_states_c.extend(other.m_states_c)
         self.actions.extend(other.actions)
         self.rewards.extend(other.rewards)
         self.values_w.extend(other.values_w)
@@ -216,6 +210,7 @@ runner appends the policy to the queue.
 """
     last_state = env.reset()
     last_features = policy.get_initial_features()
+    #last_features_w_c, last_features_w_h = policy.get_initial_features()
     length = 0
     rewards = 0
 
@@ -243,7 +238,7 @@ runner appends the policy to the queue.
                 print("inside for")
                 sys.stdout.flush()
                 fetched = policy.act(last_state, *last_features)
-                action, value_, features = fetched[0], fetched[1], fetched[2:]
+                action, value_w, value_m, goals, features_w, features_m, latent_state = fetched[0], fetched[1], fetched[2], fetched[3], fetched[4], fetched[5], fetched[6],
                 # argmax to convert from one-hot
                 print(action)
                 sys.stdout.flush()
@@ -257,12 +252,12 @@ runner appends the policy to the queue.
                 env.render()
 
                 # collect the experience
-                rollout.add(last_state, action, reward, value_, terminal, last_features)
+                rollout.add(last_state, latent_state, action, reward, value_w, value_m, terminal, features_w, features_m, goals)
                 length += 1
                 rewards += reward
 
                 last_state = state
-                last_features = features
+                last_features = [features_w[0], features_w[1], features_m[0], features_m[1]]
 
                 if info:
                     summary = tf.Summary()
@@ -296,19 +291,19 @@ runner appends the policy to the queue.
 
             for _ in range(num_local_steps):
                 fetched = policy.act(last_state, *last_features)
-                action, value_, features = fetched[0], fetched[1], fetched[2:]
+                action, value_w, value_m, goals, features_w, features_m, latent_state = fetched[0], fetched[1], fetched[2], fetched[3], fetched[4], fetched[5], fetched[6],
                 # argmax to convert from one-hot
                 state, reward, terminal, info = env.step(action.argmax())
                 if render:
                     env.render()
 
                 # collect the experience
-                rollout.add(last_state, action, reward, value_, terminal, last_features)
+                rollout.add(last_state, latent_state, action, reward, value_w, value_m, terminal, features_w, features_m, goals)
                 length += 1
                 rewards += reward
 
                 last_state = state
-                last_features = features
+                last_features = [features_w[0], features_w[1], features_m[0], features_m[1]]
 
                 if info:
                     summary = tf.Summary()

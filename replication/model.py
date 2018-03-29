@@ -224,15 +224,25 @@ class FuNPolicy(object):
             self.s_expanded = tf.expand_dims(self.s, 2) # NOTE: this used to be 0, not 2
 
             
-            # TODO: dilated lstm
+            # dilated lstm
             
             m_lstm = rnn.BasicLSTMCell(size, state_is_tuple=True) # TODO: is tuple state going to be an issue?
+            
+            m_c_init = np.zeros((1, m_lstm.state_size.c), np.float32)
+            m_h_init = np.zeros((1, m_lstm.state_size.h), np.float32)
+            self.m_state_init = [m_c_init, m_h_init]
+
+            
             self.m_state_size = m_lstm.state_size
             m_c_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.c])
             m_h_in = tf.placeholder(tf.float32, [1, m_lstm.state_size.h])
             self.m_state_in = [m_c_in, m_h_in]
 
             m_state_in = rnn.LSTMStateTuple(m_c_in, m_h_in)
+            print("M_state_in:")
+            print(m_state_in)
+
+            # TODO: there's no state_init for the manager network?
 
             # NOTE: expanded needs to be in shape (batch_size [?], n_steps [10{DILATION_RADIUS}], input_dims [1??])
             # (?, 256, 1)
@@ -245,6 +255,9 @@ class FuNPolicy(object):
             print("reformatted: ")
             print(reformatted)
             m_lstm_outputs, m_lstm_state = dRNN(m_lstm, reformatted, DILATION_RADIUS, m_state_in) # TODO: dunno if the input_dims of 1 is correct? (it was the default from the sample code)
+
+            m_lstm_c, m_lstm_h = m_lstm_state
+            self.m_state_out = [m_lstm_c[:1,:], m_lstm_h[:1,:]]
             
             
             # TODO: TODO: TODO: TODO: TODO: TODO: TODO: figure out below line!!!!!
@@ -331,5 +344,22 @@ class FuNPolicy(object):
             #self.action = tf.softmax(tf.matmul(self.U, self.w))
             #self.pi = tf.matmul(self.U, self.w)
             self.logits = tf.matmul(self.U, self.w)
+            self.logits = tf.transpose(self.logits, [0, 2, 1])
+            self.logits = tf.reshape(self.logits, [-1, 6])
+            self.sample = categorical_sample(self.logits, ac_space)[0, :]
             
         self.var_list_w = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "_w")
+        
+    def get_initial_features(self):
+        return self.w_state_init[0], self.w_state_init[1], self.m_state_init[0], self.m_state_init[1]
+
+    # returns action, worker value, manager value, goal, worker state out, manager state out, latent state
+    def act(self, ob, w_c, w_h, m_c, m_h):
+        sess = tf.get_default_session()
+        return sess.run([self.sample, self.w_vf, self.m_vf, self.g, self.w_state_out, self.m_state_out, self.s],
+                {self.x: [ob], self.w_state_in[0]: w_c, self.w_state_in[1]: w_h, self.m_state_in[0]: m_c, self.m_state_in[1]: m_h})
+
+    def value(self, ob, w_c, w_h, m_c, m_h):
+        sess = tf.get_default_session()
+        values = sess.run([self.w_vf, self.m_vf], {self.x: [ob], self.w_state_in[0]: w_c, self.w_state_in[1]: w_h, self.m_state_in[0]: m_c, self.m_state_in[1]: m_h})
+        return values[1][0] # NOTE: only returning manager because that is prediction only of environment reward?
