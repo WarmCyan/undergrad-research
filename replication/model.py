@@ -193,7 +193,7 @@ class LSTMPolicy(object):
 
 
 class FuNPolicy(object):
-    def __init__(self, ob_space, ac_space, local_steps):
+    def __init__(self, ob_space, ac_space, local_steps, horizen):
         print("Ob space:")
         print(ob_space)
         self.x = x = tf.placeholder(tf.float32, [None] + list(ob_space))
@@ -248,22 +248,33 @@ class FuNPolicy(object):
             
             
             # TODO: TODO: TODO: TODO: TODO: TODO: TODO: figure out below line!!!!!
-            m_lstm_outputs = m_lstm_outputs[-1] # NOTE: this gets only the last output from the last core. Is this correct assumption?
+            #m_lstm_outputs = m_lstm_outputs[-1] # NOTE: this gets only the last output from the last core. Is this correct assumption?
 
-            g_ = m_lstm_outputs # NOTE: again, not sure if this is true, also may need to reshape? TODO: only take the last 16? (would have to match EMBEDDING_DIMENSIONALITY in order for cosine similarity to work
-            g_norm = tf.sqrt(tf.reduce_sum(tf.square(g_), 1)) # TODO: don't know if reduce_sum dim of 1 is correct?
+            g_ = m_lstm_outputs 
+            g_norm = tf.sqrt(tf.reduce_sum(tf.square(g_), 0)) # TODO: don't know if reduce_sum dim of 1 is correct?
             self.g = g_ / g_norm
             
-            self.m_vf = tf.reshape(linear(m_lstm_outputs, 1, "m_value", normalized_columns_initializer(1.0)), [-1])
+            self.g = tf.transpose(self.g, [1, 0, 2]) # (40, ?, 256) -> (?, 40, 256)
+            
+            self.m_vf = tf.reshape(linear(m_lstm_outputs[-1], 1, "m_value", normalized_columns_initializer(1.0)), [-1]) # NOTE: I think value calculated only from the last g_t ([-1])
 
 
             # TODO: stop gradient?
-            self.pooled_goals = reduce_sum(self.g, 0) # TODO: which dimension are these pooled???
+            print("goal shape?")
+            print(self.g) # NOTE: (40, ?, 256) ?????? this doesn't seem correct
+                    
+            print("Weird slicing of g:")
+            print(self.g[:,-horizen:].shape)
+            self.pooled_goals = tf.reduce_sum(self.g[:,-horizen:], 1) # NOTE: not sure if just getting the last -horizen ACTUALLY gives us everything from this core or not, still not sure if drnn is returning the right thing
+            print("Pooled goals shape:")
+            print(self.pooled_goals.shape)
             
             # NOTE: keep in mind phi is technically trained as part of worker
             # NOTE: not using linear because no bias
-            self.phi_w = tf.get_variable("phi/w", [self.pooled_goals.get_shape()[1], size], initializer=normalized_columns_initializer(1.0))
-            self.w = matmul(self.pooled_goals, self.phi_w)
+            #self.phi_w = tf.get_variable("phi/w", [self.pooled_goals.get_shape()[1], size], initializer=normalized_columns_initializer(1.0))
+            self.phi_w = tf.get_variable("phi/w", [self.pooled_goals.get_shape()[1], EMBEDDING_DIMENSIONALITY], initializer=normalized_columns_initializer(1.0))
+            self.w = tf.matmul(self.pooled_goals, self.phi_w)
+            self.w = tf.expand_dims(self.w, 2)
 
 
 
@@ -272,7 +283,7 @@ class FuNPolicy(object):
         # WORKER NETWORK
         with tf.variable_scope(scope_name + "_w"):
 
-            w_lstm = rnn.rnn_cell.BasicLSTMCell(size, state_is_tuple=True)
+            w_lstm = rnn.BasicLSTMCell(size, state_is_tuple=True)
             self.w_state_size = w_lstm.state_size
             stepsize = tf.shape(self.z)[:1]
 
@@ -287,19 +298,34 @@ class FuNPolicy(object):
             self.z_alt = tf.expand_dims(flatten(self.x), [0])
             self.w_step_size = tf.shape(self.x)[:1] # TODO: this might actually be self.x?
 
-            w_state_in = rnn.rnn_cell.LSTMStateTuple(w_c_in, w_h_in)
+            w_state_in = rnn.LSTMStateTuple(w_c_in, w_h_in)
             w_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
-                w_lstm, self.z_alt, initial_state=w_state_in, sequence_length=w_step_size,
+                w_lstm, self.z_alt, initial_state=w_state_in, sequence_length=self.w_step_size,
                 time_major=False)
 
             w_lstm_c, w_lstm_h = w_lstm_state
-            w_lstm_outputs = tf.reshape(w_lstm_outputs, [-1, size])
+            print("original outputs shape:")
+            print(w_lstm_outputs.shape)
+            #w_lstm_outputs = tf.reshape(w_lstm_outputs, [-1, size])
             self.w_state_out = [w_lstm_c[:1, :], w_lstm_h[:1, :]]
 
             # NOTE: is U the direct lstm output? or is there in fact a linear layer inbetween? Idt there is
-            self.U = linear(w_lstm_outputs, ac_space, "U", normalized_columns_initializer(0.01))
+            #self.U = linear(w_lstm_outputs, ac_space, "U", normalized_columns_initializer(0.01))
+
+            self.U = tf.reshape(w_lstm_outputs, [-1, 6, 16]) # TODO: is this cheating?? Does this just work?
+
+            
+            print("Ac space:")
+            print(ac_space)
+            print("outputs shape:")
+            print(w_lstm_outputs.shape)
+            print("U shape:")
+            print(self.U.shape)
+            print("w shape:")
+            print(self.w.shape)
 
             # NOTE: I assume this is where value is calculated, but I don't actually know
+            w_lstm_outputs = tf.reshape(w_lstm_outputs, [-1, size])
             self.w_vf = tf.reshape(linear(w_lstm_outputs, 1, "w_value", normalized_columns_initializer(1.0)), [-1])
             
             #self.action = tf.softmax(tf.matmul(self.U, self.w))

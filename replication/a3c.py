@@ -344,13 +344,13 @@ should be computed.
         worker_device = "/job:worker/task:{}/cpu:0".format(task)
         with tf.device(tf.train.replica_device_setter(1, worker_device=worker_device)):
             with tf.variable_scope("global"):
-                self.network = FuNPolicy(env.observation_space.shape, env.action_space.n, LOCAL_STEPS)
+                self.network = FuNPolicy(env.observation_space.shape, env.action_space.n, LOCAL_STEPS, HORIZEN_C)
                 self.global_step = tf.get_variable("global_step", [], tf.int32, initializer=tf.constant_initializer(0, dtype=tf.int32),
                                                    trainable=False)
 
         with tf.device(worker_device):
             with tf.variable_scope("local"):
-                self.local_network = pi = FuNPolicy(env.observation_space.shape, env.action_space.n, LOCAL_STEPS)
+                self.local_network = pi = FuNPolicy(env.observation_space.shape, env.action_space.n, LOCAL_STEPS, HORIZEN_C)
                 pi.global_step = self.global_step
 
 
@@ -358,7 +358,7 @@ should be computed.
             
             self.ac = tf.placeholder(tf.float32, [None, env.action_space.n], name="ac")
             #self.adv_w = tf.placeholder(tf.float32, [None], name='adv_w') # NOTE: NO, not getting passed in. has to be calcluated here
-            self.v_w = tf.placeholder(tf.flaot32, [None], name='v_w')
+            self.v_w = tf.placeholder(tf.float32, [None], name='v_w')
 
 
             # NOTE: yes, getting manager advantage passed in
@@ -382,7 +382,7 @@ should be computed.
             #normalize_b = tf.nn.l2_normalize(g_hist,0)
             #cos_similarity = tf.reduce_sum(tf.multiply(normalize_a,normalize_b))
             
-            cos_similarity = cosine_sim(s_diff, g_hist, 2)
+            cos_similarity = cosine_sim(self.s_diff, self.g_hist, 2)
             
             
             self.r_intrinsic = tf.reduce_sum(cos_similarity) / HORIZEN_C
