@@ -413,12 +413,21 @@ should be computed.
             v_loss_w = .5 * tf.reduce_sum(tf.square(pi.w_vf - self.r))
 
             # TODO: do I still use entropy? I assume no?
+            bs = tf.to_float(tf.shape(pi.x)[0])
             worker_loss = .5 * v_loss_w + pi_loss
 
             grads_w = tf.gradients(worker_loss, pi.var_list_w)  # TODO: var list!!!
             grads_w, _ = tf.clip_by_global_norm(grads_w, 40.0)
 
             # TODO: logging/summaries
+            tf.summary.scalar("model/policy_loss", pi_loss / bs)
+            tf.summary.scalar("model/worker_value_loss", v_loss_w / bs)
+            tf.summary.scalar("modelmanager_value_loss", v_loss_m / bs)
+            #tf.summary.scalar("model/entropy", entropy / bs)
+            tf.summary.image("model/state", pi.x)
+            #tf.summary.scalar("model/grad_global_norm", tf.global_norm(grads))
+            #tf.summary.scalar("model/var_global_norm", tf.global_norm(pi.var_list))
+            self.summary_op = tf.summary.merge_all()
 
             self.runner = RunnerThread(env, pi, LOCAL_STEPS, visualise, renderOnly)
 
