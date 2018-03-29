@@ -112,7 +112,7 @@ Setting up Tensorflow for data parallel work
 """
 
     parser = argparse.ArgumentParser(description=None)
-    parser.add_argument('-v', '--verbose', action='count', dest='verbosity', default=0, help='Set verbosity.')
+    parser.add_argument('-v', '--verbose', action='count', dest='verbosity', default=1, help='Set verbosity.')
     parser.add_argument('--task', default=0, type=int, help='Task index')
     parser.add_argument('--job-name', default="worker", help='worker or ps')
     parser.add_argument('--num-workers', default=1, type=int, help='Number of workers')

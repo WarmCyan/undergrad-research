@@ -106,14 +106,27 @@ def dRNN(cell, inputs, rate, initial_state):
     # we want to have --> [[x1; x2], [x3; x4], [x_5; 0]]
     # which the length is the ceiling of n_steps/rate
     dilated_inputs = [tf.concat(inputs[i * rate:(i+1) * rate], axis=0) for i in range(dilated_n_steps)]
+    #for i in range(dilated_n_steps):
+        #thing = tf.concat(inputs[i*rate:(i+1)*rate], axis=0)
+        #print("thing:")
+        #print(thing)
 
     print("inputs:")
     print(dilated_inputs)
 
-    dilated_outputs, final_state = rnn.static_rnn(cell, dilated_inputs, dtype=tf.float32, initial_state=initial_state) # TODO: don't know if this being static is going to cause issues or not, and it's not lstm? But lstm can be passed in?
+    #dilated_outputs, final_state = rnn.static_rnn(cell, dilated_inputs, dtype=tf.float32, initial_state=initial_state) # TODO: don't know if this being static is going to cause issues or not, and it's not lstm? But lstm can be passed in?
     # TODO: is final_state dilated too? Do I have to handle this similar to how dilated_outputs are handled?
 
+    # NOTE: the problem is initial state!!!! Original drnn didn't have initial state passed in either (unsure if this is the case for FuN or not
+    
+    dilated_outputs, final_state = rnn.static_rnn(cell, dilated_inputs, dtype=tf.float32) # TODO: don't know if this being static is going to cause issues or not, and it's not lstm? But lstm can be passed in?
+
+    print("\nOutputs:")
     print(dilated_outputs)
+
+    print("\nOutput Shapes:")
+    for output in dilated_outputs:
+        print(output.shape)
 
     splitted_outputs = [tf.split(output, rate, axis=0) for output in dilated_outputs]
     unrolled_outputs = [output for sublist in splitted_outputs for output in sublist]

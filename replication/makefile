@@ -1,5 +1,5 @@
 all:
-	python train.py --env-id SpaceInvaders-v0 --visualise --num-workers 4
+	python train.py --env-id SpaceInvaders-v0 --visualise --num-workers 2
 
 clean:
 	@rm -rfd tmp/*
