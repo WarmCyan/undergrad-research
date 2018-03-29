@@ -425,11 +425,14 @@ should be computed.
 
             # TODO: logging/summaries
 
+            self.runner = RunnerThread(env, pi, LOCAL_STEPS, visualise, renderOnly)
 
 
             # copy weights from param server to local model
             self.sync_m = tf.group(*[v1.assign(v2) for v1, v2 in zip(pi.var_list_m, self.network.var_list_m)])
             self.sync_w = tf.group(*[v1.assign(v2) for v1, v2 in zip(pi.var_list_w, self.network.var_list_w)])
+
+            self.sync = tf.group(self.sync_m, self.sync_w)
 
             grads_and_vars_m = list(zip(grads_m, self.network.var_list_m))
             grads_and_vars_w = list(zip(grads_w, self.network.var_list_w))
