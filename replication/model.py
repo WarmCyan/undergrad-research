@@ -329,6 +329,7 @@ class FuNPolicy(object):
             self.w_vf = tf.reshape(linear(w_lstm_outputs, 1, "w_value", normalized_columns_initializer(1.0)), [-1])
             
             #self.action = tf.softmax(tf.matmul(self.U, self.w))
-            self.pi = tf.matmul(self.U, self.w)
+            #self.pi = tf.matmul(self.U, self.w)
+            self.logits = tf.matmul(self.U, self.w)
             
         self.var_list_w = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "_w")

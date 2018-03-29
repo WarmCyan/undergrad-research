@@ -26,8 +26,12 @@ def discount(x, gamma):
 #def cosine_sim(x1, x2,name = 'Cosine_loss'): # axis is 1 by default
 def cosine_sim(x1, x2,  axis, name='Cosine_loss'):
     with tf.name_scope(name):
-        x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=axis))
-        x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=axis))
+        if axis == 2:
+            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1, [0, 2, 1])),axis=axis))
+            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2, [0, 2, 1])),axis=axis))
+        else:
+            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=axis))
+            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=axis))
         denom =  tf.multiply(x1_val,x2_val)
         print(denom.shape)
         num = tf.reduce_sum(tf.multiply(x1,x2),axis=axis)
