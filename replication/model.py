@@ -134,6 +134,9 @@ def dRNN(cell, inputs, rate, initial_state):
     # remove padded zeros
     outputs = unrolled_outputs[:n_steps]
 
+    print("Actual outputs:")
+    print(outputs)
+
     return outputs, final_state
 
 
@@ -244,7 +247,8 @@ class FuNPolicy(object):
             m_lstm_outputs, m_lstm_state = dRNN(m_lstm, reformatted, DILATION_RADIUS, m_state_in) # TODO: dunno if the input_dims of 1 is correct? (it was the default from the sample code)
             
             
-            #m_lstm_outputs = None # TODO: might have to reshape?
+            # TODO: TODO: TODO: TODO: TODO: TODO: TODO: figure out below line!!!!!
+            m_lstm_outputs = m_lstm_outputs[-1] # NOTE: this gets only the last output from the last core. Is this correct assumption?
 
             g_ = m_lstm_outputs # NOTE: again, not sure if this is true, also may need to reshape? TODO: only take the last 16? (would have to match EMBEDDING_DIMENSIONALITY in order for cosine similarity to work
             g_norm = tf.sqrt(tf.reduce_sum(tf.square(g_), 1)) # TODO: don't know if reduce_sum dim of 1 is correct?
