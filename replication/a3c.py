@@ -59,8 +59,10 @@ given a rollout, compute its returns and the advantage
     
     rewards = np.asarray(rollout.rewards) # NOTE: environment rewards
     pred_v_m = np.asarray(rollout.values_m + [rollout.r])
+    pred_v_m = np. # TODO: TODO: TODO: TODO: TODO: squeeze!!!!!!!!
 
     pred_v_w = np.asarray(rollout.values_w + [rollout.r]) # NOTE: making assumption that this is correct? Do we need to handle an additional bootstrapped intrinsic reward?
+    print(pred_v_w)
 
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])
     batch_reward = discount(rewards_plus_v, gamma)[:-1] # NOTE: target_v, right?
@@ -76,20 +78,20 @@ given a rollout, compute its returns and the advantage
 
     # TODO: fancy stacking of goals for g_hist # NOTE: this is still probably super slow
     goal_hist_stack = [goals]
-    print("Goals:")
-    print(goals)
-    print("goals size:", goals.shape)
+    #print("Goals:")
+    #print(goals)
+    #print("goals size:", goals.shape)
     size = len(goals)
-    print("Size:", size)
+    #print("Size:", size)
     for i in range(HORIZEN_C):
-        print("Hist size:", len(goal_hist_stack[-1][:-1]))
+        #print("Hist size:", len(goal_hist_stack[-1][:-1]))
         #goal_hist_stack.append(np.vstack((np.zeros((1,3)), goal_hist_stack[-1][:-1])))
         goal_hist_stack.append(np.vstack((np.zeros((1,256)), goal_hist_stack[-1][:-1])))
     goal_hist = np.flip(np.rot90(np.dstack(goal_hist_stack), 3, (1,2)), axis=2)[:,1:]
 
     # TODO: calculate horizen state differnecs # NOTE: this is still probably super slow
     lstate_hist_stack = [latent_states]
-    print("Latent state size:",latent_states.shape)
+    #print("Latent state size:",latent_states.shape)
     for i in range(HORIZEN_C):
         lstate_hist_stack.append(np.vstack((np.zeros((1,256)), lstate_hist_stack[-1][:-1])))
     lstate_hist = np.flip(np.rot90(np.dstack(lstate_hist_stack), 3, (1,2)), axis=2)[:,1:]
@@ -107,12 +109,12 @@ given a rollout, compute its returns and the advantage
     features_w = rollout.features_w[0]
 
     
-    print("reward shape:", batch_reward.shape)
-    print("v_w shape:", pred_v_w.shape)
-    print("goals shape:", goals.shape)
-    print("hist shape:", goal_hist.shape)
-    print("state diffs shape:", state_diffs.shape)
-    print("adv_m shape:", batch_adv_m.shape)
+    #print("reward shape:", batch_reward.shape)
+    #print("v_w shape:", pred_v_w.shape)
+    #print("goals shape:", goals.shape)
+    #print("hist shape:", goal_hist.shape)
+    #print("state diffs shape:", state_diffs.shape)
+    #print("adv_m shape:", batch_adv_m.shape)
 
     return Batch(batch_states, batch_actions, batch_reward, batch_adv_m, pred_v_w, goals, goal_hist, state_diffs, latent_states, rollout.terminal, features_w, features_m)
 
@@ -443,15 +445,20 @@ should be computed.
 
             # TODO: do I still use entropy? I assume no?
             bs = tf.to_float(tf.shape(pi.x)[0])
+            print(tf.shape(pi.x))
             worker_loss = .5 * v_loss_w + pi_loss
 
             grads_w = tf.gradients(worker_loss, pi.var_list_w)  # TODO: var list!!!
             grads_w, _ = tf.clip_by_global_norm(grads_w, 40.0)
 
             # TODO: logging/summaries
+            tf.summary.scalar("model/log_prob_tf", tf.reduce_sum(log_prob_tf))
+            tf.summary.scalar("model/reward", tf.reduce_sum(self.r))
+            tf.summary.scalar("model/v_w", tf.reduce_sum(self.v_w))
+            tf.summary.scalar("model/adv_m", tf.reduce_sum(self.adv_m))
             tf.summary.scalar("model/policy_loss", pi_loss / bs)
             tf.summary.scalar("model/worker_value_loss", v_loss_w / bs)
-            tf.summary.scalar("modelmanager_value_loss", v_loss_m / bs)
+            tf.summary.scalar("model/manager_value_loss", v_loss_m / bs)
             #tf.summary.scalar("model/entropy", entropy / bs)
             tf.summary.image("model/state", pi.x)
             #tf.summary.scalar("model/grad_global_norm", tf.global_norm(grads))
@@ -572,12 +579,12 @@ process grabs a rollout that's been produced by the thread runner,
 and updates the parameters.  The update is then sent to the parameter
 server.
 """
-        print("hello from process")
-        sys.stdout.flush()
+        #print("hello from process")
+        #sys.stdout.flush()
 
         sess.run(self.sync)  # copy weights from shared to local
         
-        print("synced")
+        #print("synced")
         sys.stdout.flush()
         
         rollout = self.pull_batch_from_queue()

@@ -78,7 +78,7 @@ def run(args, server, renderOnly=False):
         global_step = sess.run(trainer.global_step)
         logger.info("Starting training at step=%d", global_step)
         while not sv.should_stop() and (not num_global_steps or global_step < num_global_steps):
-            logger.info("About to process")
+            #logger.info("About to process")
             trainer.process(sess)
             global_step = sess.run(trainer.global_step)
 
