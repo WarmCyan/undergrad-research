@@ -52,6 +52,7 @@ given a rollout, compute its returns and the advantage
     batch_actions = np.asarray(rollout.actions)
     
     latent_states = np.asarray(rollout.m_states)
+    latent_states = np.squeeze(latent_states)
     goals = np.asarray(rollout.goals)
     
     goals = np.squeeze(goals) # remove that random 1 dimension in the middle
@@ -66,6 +67,12 @@ given a rollout, compute its returns and the advantage
 
     delta_t_m = rewards + gamma*pred_v_m[1:] - pred_v_m[:-1]
     batch_adv_m = discount(delta_t_m, gamma*lambda_)
+
+
+    # TODO: don't know if this is right, but it has one too many values
+    pred_v_w = pred_v_w[:-1]
+
+    
 
     # TODO: fancy stacking of goals for g_hist # NOTE: this is still probably super slow
     goal_hist_stack = [goals]
@@ -82,10 +89,11 @@ given a rollout, compute its returns and the advantage
 
     # TODO: calculate horizen state differnecs # NOTE: this is still probably super slow
     lstate_hist_stack = [latent_states]
+    print("Latent state size:",latent_states.shape)
     for i in range(HORIZEN_C):
-        lstate_hist_stack.append(np.vstack(np.zeros((1,3)), lstate_hist_stack[-1][:-1]))
+        lstate_hist_stack.append(np.vstack((np.zeros((1,256)), lstate_hist_stack[-1][:-1])))
     lstate_hist = np.flip(np.rot90(np.dstack(lstate_hist_stack), 3, (1,2)), axis=2)[:,1:]
-    latent_states_sub = np.rot90(np.repeat(latent_states[:,:,np.newaxis], HORIZEN_C-1, axis=2), 1, (1,2)) 
+    latent_states_sub = np.rot90(np.repeat(latent_states[:,:,np.newaxis], HORIZEN_C, axis=2), 1, (1,2)) 
     state_diffs = latent_states_sub - lstate_hist
 
     # TODO: calculate g_dist, single cosine similarity between goals and latent states (but for each entry, so end with an array, right?
@@ -97,6 +105,14 @@ given a rollout, compute its returns and the advantage
 
     features_m = rollout.features_m[0]
     features_w = rollout.features_w[0]
+
+    
+    print("reward shape:", batch_reward.shape)
+    print("v_w shape:", pred_v_w.shape)
+    print("goals shape:", goals.shape)
+    print("hist shape:", goal_hist.shape)
+    print("state diffs shape:", state_diffs.shape)
+    print("adv_m shape:", batch_adv_m.shape)
 
     return Batch(batch_states, batch_actions, batch_reward, batch_adv_m, pred_v_w, goals, goal_hist, state_diffs, latent_states, rollout.terminal, features_w, features_m)
 
@@ -576,6 +592,7 @@ server.
 
         feed_dict = {
                 self.local_network.x: batch.si, 
+                self.r: batch.r,
                 self.ac: batch.ac,
                 self.v_w: batch.v_w,
                 self.adv_m: batch.adv_m,
