@@ -8,6 +8,7 @@ import scipy.signal
 import scipy.spatial
 import threading
 import distutils.version
+import logging
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
 import sys
@@ -53,6 +54,8 @@ given a rollout, compute its returns and the advantage
     latent_states = np.asarray(rollout.m_states)
     goals = np.asarray(rollout.goals)
     
+    goals = np.squeeze(goals) # remove that random 1 dimension in the middle
+    
     rewards = np.asarray(rollout.rewards) # NOTE: environment rewards
     pred_v_m = np.asarray(rollout.values_m + [rollout.r])
 
@@ -66,8 +69,15 @@ given a rollout, compute its returns and the advantage
 
     # TODO: fancy stacking of goals for g_hist # NOTE: this is still probably super slow
     goal_hist_stack = [goals]
+    print("Goals:")
+    print(goals)
+    print("goals size:", goals.shape)
+    size = len(goals)
+    print("Size:", size)
     for i in range(HORIZEN_C):
-        goal_hist_stack.append(np.vstack(np.zeros((1,3)), goal_hist_stack[-1][:-1]))
+        print("Hist size:", len(goal_hist_stack[-1][:-1]))
+        #goal_hist_stack.append(np.vstack((np.zeros((1,3)), goal_hist_stack[-1][:-1])))
+        goal_hist_stack.append(np.vstack((np.zeros((1,256)), goal_hist_stack[-1][:-1])))
     goal_hist = np.flip(np.rot90(np.dstack(goal_hist_stack), 3, (1,2)), axis=2)[:,1:]
 
     # TODO: calculate horizen state differnecs # NOTE: this is still probably super slow
@@ -338,6 +348,9 @@ But overall, we'll define the model, specify its inputs, and describe how the po
 should be computed.
 """
 
+        print("---- A3C OBJECT BEING INITIALIZED ----")
+        sys.stdout.flush()
+
         self.env = env
         self.task = task
         worker_device = "/job:worker/task:{}/cpu:0".format(task)
@@ -543,8 +556,14 @@ process grabs a rollout that's been produced by the thread runner,
 and updates the parameters.  The update is then sent to the parameter
 server.
 """
+        print("hello from process")
+        sys.stdout.flush()
 
         sess.run(self.sync)  # copy weights from shared to local
+        
+        print("synced")
+        sys.stdout.flush()
+        
         rollout = self.pull_batch_from_queue()
         batch = process_rollout(rollout, gamma=0.99, lambda_=1.0)
 

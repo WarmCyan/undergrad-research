@@ -90,7 +90,7 @@ def dRNN(cell, inputs, rate, initial_state):
         zero_tensor = tf.zeros_like(inputs[0])
         dilated_n_steps = n_steps // rate + 1 # NOTE: in python // is division with automatic floor
 
-        for i_pad in range(dilated_n_steps * rate - n_stpes):
+        for i_pad in range(dilated_n_steps * rate - n_steps):
             inputs.append(zero_tensor)
 
     else:
@@ -250,7 +250,8 @@ class FuNPolicy(object):
             print(self.s.shape)
             print("expanded size:")
             print(self.s_expanded.shape)
-            reformatted = _rnn_reformat(self.s_expanded, 1, local_steps)
+            #reformatted = _rnn_reformat(self.s_expanded, 1, local_steps)
+            reformatted = _rnn_reformat(self.s_expanded, 1, 256)
             #reformatted = _rnn_reformat(self.s_expanded, 256, local_steps) # TODO: no idea if 256 is correct. Default is 1?
             print("reformatted: ")
             print(reformatted)
@@ -281,6 +282,11 @@ class FuNPolicy(object):
             self.pooled_goals = tf.reduce_sum(self.g[:,-horizen:], 1) # NOTE: not sure if just getting the last -horizen ACTUALLY gives us everything from this core or not, still not sure if drnn is returning the right thing
             print("Pooled goals shape:")
             print(self.pooled_goals.shape)
+
+            # fix final shape for only getting last goal
+            self.g = tf.reshape(self.g[:,-1:], [-1, 256])
+            print("Final goal shape:")
+            print(self.g.shape)
             
             # NOTE: keep in mind phi is technically trained as part of worker
             # NOTE: not using linear because no bias
@@ -309,6 +315,7 @@ class FuNPolicy(object):
             self.w_state_in = [w_c_in, w_h_in]
 
             self.z_alt = tf.expand_dims(flatten(self.x), [0])
+            #self.w_step_size = tf.shape(self.x)[:1] # TODO: this might actually be self.x?
             self.w_step_size = tf.shape(self.x)[:1] # TODO: this might actually be self.x?
 
             w_state_in = rnn.LSTMStateTuple(w_c_in, w_h_in)
@@ -322,10 +329,13 @@ class FuNPolicy(object):
             #w_lstm_outputs = tf.reshape(w_lstm_outputs, [-1, size])
             self.w_state_out = [w_lstm_c[:1, :], w_lstm_h[:1, :]]
 
-            # NOTE: is U the direct lstm output? or is there in fact a linear layer inbetween? Idt there is
-            #self.U = linear(w_lstm_outputs, ac_space, "U", normalized_columns_initializer(0.01))
+            # NOTE: is U the direct lstm output? or is there in fact a linear layer inbetween? 
+            # TODO: this is NOT how the paper does it, but I don't understand how to go from (256) to (6,16) without it
+            nicer_lstm_outputs = tf.reshape(w_lstm_outputs, [-1, size])
+            self.U = linear(nicer_lstm_outputs, ac_space*EMBEDDING_DIMENSIONALITY, "U", normalized_columns_initializer(0.01))
 
-            self.U = tf.reshape(w_lstm_outputs, [-1, 6, 16]) # TODO: is this cheating?? Does this just work?
+            #self.U = tf.reshape(w_lstm_outputs, [-1, 6, 16]) # TODO: is this cheating?? Does this just work?
+            self.U = tf.reshape(self.U, [-1, 6, 16]) # TODO: is this cheating?? Does this just work?
 
             
             print("Ac space:")
