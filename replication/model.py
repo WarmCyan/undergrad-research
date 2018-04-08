@@ -215,6 +215,7 @@ class FuNPolicy(object):
         size = 256
         
         scope_name = tf.get_variable_scope().name
+        print("scope name:", scope_name)
 
         # MANAGER NETWORK
         with tf.variable_scope(scope_name + "_m"):
@@ -297,7 +298,9 @@ class FuNPolicy(object):
 
 
 
-        self.var_list_m = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "_m")
+        #self.var_list_m = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "_m")
+        print("scope name:", scope_name)
+        self.var_list_m = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "/" + scope_name + "_m")
 
         # WORKER NETWORK
         with tf.variable_scope(scope_name + "_w"):
@@ -313,10 +316,13 @@ class FuNPolicy(object):
             w_c_in = tf.placeholder(tf.float32, [1, w_lstm.state_size.c])
             w_h_in = tf.placeholder(tf.float32, [1, w_lstm.state_size.h])
             self.w_state_in = [w_c_in, w_h_in]
+            self.w_c_in = w_c_in
+            self.w_h_in = w_h_in
 
             self.z_alt = tf.expand_dims(flatten(self.x), [0])
             #self.w_step_size = tf.shape(self.x)[:1] # TODO: this might actually be self.x?
-            self.w_step_size = tf.shape(self.x)[:1] # TODO: this might actually be self.x?
+            #self.w_step_size = tf.shape(self.x)[:1] # TODO: this might actually be self.x?
+            self.w_step_size = tf.shape(self.z_alt)[:1] # TODO: this might actually be self.x?
 
             w_state_in = rnn.LSTMStateTuple(w_c_in, w_h_in)
             w_lstm_outputs, w_lstm_state = tf.nn.dynamic_rnn(
@@ -349,8 +355,13 @@ class FuNPolicy(object):
 
             # NOTE: I assume this is where value is calculated, but I don't actually know
             w_lstm_outputs = tf.reshape(w_lstm_outputs, [-1, size])
+            self.w_lstm_outputs_debug = w_lstm_outputs
             self.w_vf = tf.reshape(linear(w_lstm_outputs, 1, "w_value", normalized_columns_initializer(1.0)), [-1])
             #self.w_vf = linear(w_lstm_outputs, 1, "w_value", normalized_columns_initializer(1.0))
+
+
+            #tf.summary.scalar("model_inner/w_vf", self.w_vf)
+            
             
             #self.action = tf.softmax(tf.matmul(self.U, self.w))
             #self.pi = tf.matmul(self.U, self.w)
@@ -359,7 +370,9 @@ class FuNPolicy(object):
             self.logits = tf.reshape(self.logits, [-1, 6])
             self.sample = categorical_sample(self.logits, ac_space)[0, :]
             
-        self.var_list_w = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "_w")
+        self.var_list_w = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "/" + scope_name + "_w")
+        for item in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "/" + scope_name + "_m"):
+            self.var_list_w.remove(item)
         
     def get_initial_features(self):
         return self.w_state_init[0], self.w_state_init[1], self.m_state_init[0], self.m_state_init[1]

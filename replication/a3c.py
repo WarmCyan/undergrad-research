@@ -59,9 +59,11 @@ given a rollout, compute its returns and the advantage
     
     rewards = np.asarray(rollout.rewards) # NOTE: environment rewards
     pred_v_m = np.asarray(rollout.values_m + [rollout.r])
-    pred_v_m = np. # TODO: TODO: TODO: TODO: TODO: squeeze!!!!!!!!
+    #pred_v_m = np.squeeze(pred_v_m) 
 
     pred_v_w = np.asarray(rollout.values_w + [rollout.r]) # NOTE: making assumption that this is correct? Do we need to handle an additional bootstrapped intrinsic reward?
+    print(pred_v_w.shape)
+    pred_v_w = np.squeeze(pred_v_w) 
     print(pred_v_w)
 
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])
@@ -72,7 +74,8 @@ given a rollout, compute its returns and the advantage
 
 
     # TODO: don't know if this is right, but it has one too many values
-    pred_v_w = pred_v_w[:-1]
+    #pred_v_w = pred_v_w[:-1]
+    pred_v_w = pred_v_w[1:]
 
     
 
@@ -312,18 +315,27 @@ runner appends the policy to the queue.
             yield rollout
 
     else: 
+        counter = 0
         while True:
             terminal_end = False
             rollout = PartialRollout()
 
 
             for _ in range(num_local_steps):
+                #print("going in w:", last_features[0])
                 fetched = policy.act(last_state, *last_features)
-                action, value_w, value_m, goals, features_w, features_m, latent_state = fetched[0], fetched[1], fetched[2], fetched[3], fetched[4], fetched[5], fetched[6],
+                action, value_w, value_m, goals, features_w, features_m, latent_state = fetched[0], fetched[1], fetched[2], fetched[3], fetched[4], fetched[5], fetched[6]
                 # argmax to convert from one-hot
                 state, reward, terminal, info = env.step(action.argmax())
                 if render:
                     env.render()
+
+                #print("last fetched w:", features_w[0])
+                if True in np.isnan(features_w):
+                    print("======== FOUND NAN =========")
+                    print("Counter:", counter)
+                    print(fetched)
+                    return
 
                 # collect the experience
                 rollout.add(last_state, latent_state, action, reward, value_w, value_m, terminal, features_w, features_m, goals)
@@ -355,6 +367,7 @@ runner appends the policy to the queue.
                 rollout.r = policy.value(last_state, *last_features)
 
             # once we have enough experience, yield it, and have the ThreadRunner place it on a queue
+            counter += 1
             yield rollout
 
 class A3C(object):
@@ -463,6 +476,16 @@ should be computed.
             tf.summary.image("model/state", pi.x)
             #tf.summary.scalar("model/grad_global_norm", tf.global_norm(grads))
             #tf.summary.scalar("model/var_global_norm", tf.global_norm(pi.var_list))
+
+
+            tf.summary.scalar("model_inner/w_vf", tf.reduce_sum(pi.w_vf))
+            tf.summary.histogram("model_inner/z", pi.z)
+            tf.summary.histogram("model_inner/z_alt", pi.z_alt)
+            tf.summary.histogram("model_inner/U", pi.U)
+            tf.summary.histogram("model_inner/w_c_in", pi.w_c_in)
+            tf.summary.histogram("model_inner/w_h_in", pi.w_h_in)
+            #tf.summary.histogram("model_inner/w_lstm_outputs", pi.w_lstm_outputs_debug)
+            
             self.summary_op = tf.summary.merge_all()
 
             self.runner = RunnerThread(env, pi, LOCAL_STEPS, visualise, renderOnly)
@@ -472,7 +495,18 @@ should be computed.
             self.sync_m = tf.group(*[v1.assign(v2) for v1, v2 in zip(pi.var_list_m, self.network.var_list_m)])
             self.sync_w = tf.group(*[v1.assign(v2) for v1, v2 in zip(pi.var_list_w, self.network.var_list_w)])
 
+            print("MANAGER:")
+            for v1, v2 in zip(pi.var_list_m, self.network.var_list_m):
+                print("---- ", v1, v2)
+            print("WORKER:")
+            for v1, v2 in zip(pi.var_list_w, self.network.var_list_w):
+                print("---- ", v1, v2)
+                
+
             self.sync = tf.group(self.sync_m, self.sync_w)
+            print("Sync M:", self.sync_m)
+            print("Sync W:", self.sync_w)
+            print("Self sync:", self.sync)
 
             grads_and_vars_m = list(zip(grads_m, self.network.var_list_m))
             grads_and_vars_w = list(zip(grads_w, self.network.var_list_w))
@@ -582,13 +616,17 @@ server.
         #print("hello from process")
         #sys.stdout.flush()
 
-        sess.run(self.sync)  # copy weights from shared to local
+        sess.run(self.sync)  # copy weights from shared to local # TODO: TODO: TODO: TODO: this is what's causing NaN's
         
         #print("synced")
         sys.stdout.flush()
         
         rollout = self.pull_batch_from_queue()
         batch = process_rollout(rollout, gamma=0.99, lambda_=1.0)
+        #print("features_w_c", batch.features_w[0])
+        #print(batch.features_w[0])
+        #print("features_w_h", batch.features_w[1])
+        #print(batch.features_w[1])
 
         should_compute_summary = self.task == 0 and self.local_steps % 11 == 0
 
