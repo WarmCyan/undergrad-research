@@ -28,16 +28,20 @@ def discount(x, gamma):
 def cosine_sim(x1, x2,  axis, name='Cosine_loss'):
     with tf.name_scope(name):
         if axis == 2:
-            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1, [0, 2, 1])),axis=axis))
-            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2, [0, 2, 1])),axis=axis))
+            # TODO: TODO: TODO: TODO: TODO: TODO: TODO: is setting axis to 1 even valid? Pretty sure it should still be 2?
+            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1, [0, 2, 1])),axis=1)) # NOTE: axis used to be axix
+            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2, [0, 2, 1])),axis=1))
         else:
             x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=axis))
             x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=axis))
-        denom =  tf.multiply(x1_val,x2_val)
+        # NOTE: remove pesky nan's....?
+        x1_val = tf.where(tf.is_nan(x1_val), tf.zeros_like(x1_val), x1_val)
+        x2_val = tf.where(tf.is_nan(x2_val), tf.zeros_like(x2_val), x2_val)
+        denom =  tf.multiply(x1_val,x2_val) + .00001 # NOTE: adding to avoid division by 1
         print(denom.shape)
         num = tf.reduce_sum(tf.multiply(x1,x2),axis=axis)
         print(num.shape)
-        return tf.div(num,denom)
+        return tf.Print(tf.div(num,denom), [num, denom, x1_val, x2_val], message="cosine_sim returns:", summarize=256)
 
     # TODO: verify this (probably axis is actually 2, not 1)
     
@@ -106,6 +110,11 @@ given a rollout, compute its returns and the advantage
 
 
     # NOTE: pretty sure the cosine_sim might still be along wrong dimension down below?
+
+
+    #print("G_hist:",goal_hist)
+    #print("s_diff:", state_diffs)
+    
 
 
     features_m = rollout.features_m[0]
@@ -388,8 +397,8 @@ should be computed.
         with tf.device(tf.train.replica_device_setter(1, worker_device=worker_device)):
             with tf.variable_scope("global"):
                 self.network = FuNPolicy(env.observation_space.shape, env.action_space.n, LOCAL_STEPS, HORIZEN_C)
-                self.global_step = tf.get_variable("global_step", [], tf.int32, initializer=tf.constant_initializer(0, dtype=tf.int32),
-                                                   trainable=False)
+                self.global_step = tf.get_variable("global_step", [], tf.int32, initializer=tf.constant_initializer(0, dtype=tf.int32), trainable=False)
+                #self.init_uninit = tf.tf.report_uninitialized_variables(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable().name))
 
         with tf.device(worker_device):
             with tf.variable_scope("local"):
@@ -442,7 +451,7 @@ should be computed.
             manager_loss = .5 * v_loss_m + gt_loss
             
 
-            grads_m = tf.gradients(manager_loss, pi.var_list_m) # TODO: var list!!!!
+            grads_m = tf.gradients(manager_loss, pi.var_list_m, stop_gradients=pi.var_list_w) # TODO: var list!!!!
             grads_m, _ = tf.clip_by_global_norm(grads_m, 40.0)
 
             
@@ -461,7 +470,7 @@ should be computed.
             print(tf.shape(pi.x))
             worker_loss = .5 * v_loss_w + pi_loss
 
-            grads_w = tf.gradients(worker_loss, pi.var_list_w)  # TODO: var list!!!
+            grads_w = tf.gradients(worker_loss, pi.var_list_w, stop_gradients=pi.var_list_m)  # TODO: var list!!!
             grads_w, _ = tf.clip_by_global_norm(grads_w, 40.0)
 
             # TODO: logging/summaries
@@ -469,6 +478,13 @@ should be computed.
             tf.summary.scalar("model/reward", tf.reduce_sum(self.r))
             tf.summary.scalar("model/v_w", tf.reduce_sum(self.v_w))
             tf.summary.scalar("model/adv_m", tf.reduce_sum(self.adv_m))
+            tf.summary.scalar("model/adv_w", tf.reduce_sum(self.adv_w))
+            tf.summary.scalar("model/r", tf.reduce_sum(self.r))
+            tf.summary.scalar("model/r_intrins", tf.reduce_sum(self.r_intrinsic))
+            tf.summary.scalar("model/g_dist", tf.reduce_sum(self.g_dist))
+            tf.summary.scalar("model/s_diff", tf.reduce_sum(self.s_diff))
+            tf.summary.scalar("model/g_hist", tf.reduce_sum(self.g_hist))
+            tf.summary.scalar("model/cos_sim", tf.reduce_sum(cos_similarity))
             tf.summary.scalar("model/policy_loss", pi_loss / bs)
             tf.summary.scalar("model/worker_value_loss", v_loss_w / bs)
             tf.summary.scalar("model/manager_value_loss", v_loss_m / bs)
@@ -484,6 +500,8 @@ should be computed.
             tf.summary.histogram("model_inner/U", pi.U)
             tf.summary.histogram("model_inner/w_c_in", pi.w_c_in)
             tf.summary.histogram("model_inner/w_h_in", pi.w_h_in)
+            tf.summary.scalar("model_inner/grads_w", tf.global_norm(grads_w))
+            tf.summary.scalar("model_inner/grads_m", tf.global_norm(grads_m))
             #tf.summary.histogram("model_inner/w_lstm_outputs", pi.w_lstm_outputs_debug)
             
             self.summary_op = tf.summary.merge_all()
@@ -513,8 +531,10 @@ should be computed.
             inc_step = self.global_step.assign_add(tf.shape(pi.x)[0])
             
 
-            opt_m = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
-            opt_w = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
+            #opt_m = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
+            #opt_w = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
+            opt_m = tf.train.AdamOptimizer(LEARNING_RATE)
+            opt_w = tf.train.AdamOptimizer(LEARNING_RATE)
 
             self.train_op = tf.group(opt_m.apply_gradients(grads_and_vars_m), opt_w.apply_gradients(grads_and_vars_w), inc_step)
             self.summary_writer = None
@@ -592,6 +612,9 @@ should be computed.
             '''
 
     def start(self, sess, summary_writer):
+        try:
+            sess.run(tf.global_variables_initializer()) # TODO: recently added, dunno if it belongs
+        except: pass
         self.runner.start_runner(sess, summary_writer)
         self.summary_writer = summary_writer
 
@@ -628,12 +651,16 @@ server.
         #print("features_w_h", batch.features_w[1])
         #print(batch.features_w[1])
 
-        should_compute_summary = self.task == 0 and self.local_steps % 11 == 0
+        # TODO: TODO: TODO: TODO: don't compute summaries every time!
+        #should_compute_summary = self.task == 0 and self.local_steps % 11 == 0
+        should_compute_summary = True
 
         if should_compute_summary:
             fetches = [self.summary_op, self.train_op, self.global_step]
+            #fetches = [self.summary_op, self.global_step]
         else:
             fetches = [self.train_op, self.global_step]
+            #fetches = [self.global_step]
 
         feed_dict = {
                 self.local_network.x: batch.si, 

@@ -18,7 +18,7 @@ DILATION_RADIUS = 10
 def normalized_columns_initializer(std=1.0):
     def _initializer(shape, dtype=None, partition_info=None):
         out = np.random.randn(*shape).astype(np.float32)
-        out *= std / np.sqrt(np.square(out).sum(axis=0, keepdims=True))
+        out *= std / (np.sqrt(np.square(out).sum(axis=0, keepdims=True)) + .00001) # NOTE: hoping this fixes all the NaN - https://github.com/tensorflow/tensorflow/issues/3307
         return tf.constant(out)
     return _initializer
 
@@ -293,7 +293,8 @@ class FuNPolicy(object):
             # NOTE: not using linear because no bias
             #self.phi_w = tf.get_variable("phi/w", [self.pooled_goals.get_shape()[1], size], initializer=normalized_columns_initializer(1.0))
             self.phi_w = tf.get_variable("phi/w", [self.pooled_goals.get_shape()[1], EMBEDDING_DIMENSIONALITY], initializer=normalized_columns_initializer(1.0))
-            self.w = tf.matmul(tf.stop_gradient(self.pooled_goals), self.phi_w)
+            #self.w = tf.matmul(tf.stop_gradient(self.pooled_goals), self.phi_w)
+            self.w = tf.matmul(self.pooled_goals, self.phi_w)
             self.w = tf.expand_dims(self.w, 2)
 
 
