@@ -1,5 +1,6 @@
 from __future__ import print_function
 from collections import namedtuple
+import random
 import numpy as np
 import tensorflow as tf
 from model import LSTMPolicy, FuNPolicy
@@ -20,6 +21,12 @@ HORIZEN_C = 10
 INTRINSIC_INFLUENCE = .5 # NOTE: from the paper, somewhere between 0 and 1....
 
 
+EPSILON_orig = .2
+EPSILON = .2
+ANNEAL_STEPS = 10000000 
+EPSILON_STEP = (EPSILON / 2) / ANNEAL_STEPS
+
+
 def discount(x, gamma):
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
 
@@ -29,19 +36,20 @@ def cosine_sim(x1, x2,  axis, name='Cosine_loss'):
     with tf.name_scope(name):
         if axis == 2:
             # TODO: TODO: TODO: TODO: TODO: TODO: TODO: is setting axis to 1 even valid? Pretty sure it should still be 2?
-            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1, [0, 2, 1])),axis=1)) # NOTE: axis used to be axix
-            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2, [0, 2, 1])),axis=1))
+            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1, [0, 2, 1])),axis=1)) # NOTE: axis used to be axix (2, rather than 1)
+            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2, [0, 2, 1])),axis=1)) 
         else:
             x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=axis))
             x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=axis))
         # NOTE: remove pesky nan's....?
         x1_val = tf.where(tf.is_nan(x1_val), tf.zeros_like(x1_val), x1_val)
         x2_val = tf.where(tf.is_nan(x2_val), tf.zeros_like(x2_val), x2_val)
-        denom =  tf.multiply(x1_val,x2_val) + .00001 # NOTE: adding to avoid division by 1
-        print(denom.shape)
+        denom =  tf.multiply(x1_val,x2_val) + .00001 # NOTE: adding to avoid division by 0
+        #print(denom.shape)
         num = tf.reduce_sum(tf.multiply(x1,x2),axis=axis)
-        print(num.shape)
-        return tf.Print(tf.div(num,denom), [num, denom, x1_val, x2_val], message="cosine_sim returns:", summarize=256)
+        #print(num.shape)
+        #return tf.Print(tf.div(num,denom), [num, denom, x1_val, x2_val], message="cosine_sim returns:", summarize=256)
+        return tf.div(num,denom)
 
     # TODO: verify this (probably axis is actually 2, not 1)
     
@@ -66,9 +74,9 @@ given a rollout, compute its returns and the advantage
     #pred_v_m = np.squeeze(pred_v_m) 
 
     pred_v_w = np.asarray(rollout.values_w + [rollout.r]) # NOTE: making assumption that this is correct? Do we need to handle an additional bootstrapped intrinsic reward?
-    print(pred_v_w.shape)
+    #print(pred_v_w.shape)
     pred_v_w = np.squeeze(pred_v_w) 
-    print(pred_v_w)
+    #print(pred_v_w)
 
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])
     batch_reward = discount(rewards_plus_v, gamma)[:-1] # NOTE: target_v, right?
@@ -243,6 +251,9 @@ that would constantly interact with the environment and tell it what to do.  Thi
 
 
 def env_runner(env, policy, num_local_steps, summary_writer, render, renderOnly):
+    global EPSILON
+    global EPSILON_orig
+    global EPSILON_STEP
     """
 The logic of the thread runner.  In brief, it constantly keeps on running
 the policy, and as long as the rollout exceeds a certain length, the thread
@@ -334,6 +345,15 @@ runner appends the policy to the queue.
                 #print("going in w:", last_features[0])
                 fetched = policy.act(last_state, *last_features)
                 action, value_w, value_m, goals, features_w, features_m, latent_state = fetched[0], fetched[1], fetched[2], fetched[3], fetched[4], fetched[5], fetched[6]
+
+                # epsilon prob of random action
+                randomOrNot = random.uniform(0, 1)
+                if randomOrNot < EPSILON:
+                    #print("RANDOM ACTION")
+                    action = np.array([0.0] * env.action_space.n)
+                    action[env.action_space.sample()] = 1.0
+                    if EPSILON > EPSILON_orig / 2: EPSILON -= EPSILON_STEP
+                
                 # argmax to convert from one-hot
                 state, reward, terminal, info = env.step(action.argmax())
                 if render:
@@ -513,18 +533,18 @@ should be computed.
             self.sync_m = tf.group(*[v1.assign(v2) for v1, v2 in zip(pi.var_list_m, self.network.var_list_m)])
             self.sync_w = tf.group(*[v1.assign(v2) for v1, v2 in zip(pi.var_list_w, self.network.var_list_w)])
 
-            print("MANAGER:")
-            for v1, v2 in zip(pi.var_list_m, self.network.var_list_m):
-                print("---- ", v1, v2)
-            print("WORKER:")
-            for v1, v2 in zip(pi.var_list_w, self.network.var_list_w):
-                print("---- ", v1, v2)
+            #print("MANAGER:")
+            #for v1, v2 in zip(pi.var_list_m, self.network.var_list_m):
+                #print("---- ", v1, v2)
+            #print("WORKER:")
+            #for v1, v2 in zip(pi.var_list_w, self.network.var_list_w):
+                #print("---- ", v1, v2)
                 
 
             self.sync = tf.group(self.sync_m, self.sync_w)
-            print("Sync M:", self.sync_m)
-            print("Sync W:", self.sync_w)
-            print("Self sync:", self.sync)
+            #print("Sync M:", self.sync_m)
+            #print("Sync W:", self.sync_w)
+            #print("Self sync:", self.sync)
 
             grads_and_vars_m = list(zip(grads_m, self.network.var_list_m))
             grads_and_vars_w = list(zip(grads_w, self.network.var_list_w))
@@ -540,9 +560,6 @@ should be computed.
             self.summary_writer = None
             self.local_steps = 0
 
-
-
-            
 
 
 
@@ -652,8 +669,8 @@ server.
         #print(batch.features_w[1])
 
         # TODO: TODO: TODO: TODO: don't compute summaries every time!
-        #should_compute_summary = self.task == 0 and self.local_steps % 11 == 0
-        should_compute_summary = True
+        should_compute_summary = self.task == 0 and self.local_steps % 11 == 0
+        #should_compute_summary = True
 
         if should_compute_summary:
             fetches = [self.summary_op, self.train_op, self.global_step]
