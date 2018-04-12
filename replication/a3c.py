@@ -67,7 +67,8 @@ given a rollout, compute its returns and the advantage
     latent_states = np.squeeze(latent_states)
     goals = np.asarray(rollout.goals)
     
-    goals = np.squeeze(goals) # remove that random 1 dimension in the middle
+    # NOTE: this causes weird issue if you don't specify axis (if for some reason, only a single set of goals is coming in, then that initial 1 dimension would also be removed, which breaks the vstack below in goal_hist_stack)
+    goals = np.squeeze(goals, axis=1) # remove that random 1 dimension in the middle 
     
     rewards = np.asarray(rollout.rewards) # NOTE: environment rewards
     pred_v_m = np.asarray(rollout.values_m + [rollout.r])
@@ -101,6 +102,10 @@ given a rollout, compute its returns and the advantage
     for i in range(HORIZEN_C):
         #print("Hist size:", len(goal_hist_stack[-1][:-1]))
         #goal_hist_stack.append(np.vstack((np.zeros((1,3)), goal_hist_stack[-1][:-1])))
+
+        # TODO: below line is breaking? "all input array dimensions except for concatenation axis must be exactly equal 
+        print(goal_hist_stack[-1])
+        print(goal_hist_stack[-1][:-1].shape)
         goal_hist_stack.append(np.vstack((np.zeros((1,256)), goal_hist_stack[-1][:-1])))
     goal_hist = np.flip(np.rot90(np.dstack(goal_hist_stack), 3, (1,2)), axis=2)[:,1:]
 
@@ -551,10 +556,10 @@ should be computed.
             inc_step = self.global_step.assign_add(tf.shape(pi.x)[0])
             
 
-            #opt_m = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
-            #opt_w = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
-            opt_m = tf.train.AdamOptimizer(LEARNING_RATE)
-            opt_w = tf.train.AdamOptimizer(LEARNING_RATE)
+            opt_m = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
+            opt_w = tf.train.RMSPropOptimizer(LEARNING_RATE, ALPHA, use_locking=True)
+            #opt_m = tf.train.AdamOptimizer(LEARNING_RATE)
+            #opt_w = tf.train.AdamOptimizer(LEARNING_RATE)
 
             self.train_op = tf.group(opt_m.apply_gradients(grads_and_vars_m), opt_w.apply_gradients(grads_and_vars_w), inc_step)
             self.summary_writer = None
