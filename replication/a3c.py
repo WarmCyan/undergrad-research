@@ -68,7 +68,12 @@ given a rollout, compute its returns and the advantage
     goals = np.asarray(rollout.goals)
     
     # NOTE: this causes weird issue if you don't specify axis (if for some reason, only a single set of goals is coming in, then that initial 1 dimension would also be removed, which breaks the vstack below in goal_hist_stack)
-    goals = np.squeeze(goals, axis=1) # remove that random 1 dimension in the middle 
+    goals = np.squeeze(goals) # remove that random 1 dimension in the middle 
+    if goals.shape[0] == 0 or len(goals.shape) < 2: # TODO: This is sometimes randomly the case? Still not sure why
+        print("=========== ERROR - BAD SHAPE")
+        return -1
+    
+        
     
     rewards = np.asarray(rollout.rewards) # NOTE: environment rewards
     pred_v_m = np.asarray(rollout.values_m + [rollout.r])
@@ -450,6 +455,9 @@ should be computed.
             #self.g_dist = tf.placeholder(tf.float32, [None], name='g_dist') # TODO: calc in process_rollout (should just be a single cosine similarity calculation)
             self.latent_states = tf.placeholder(tf.float32, [None, 256], name='latent_states')
 
+
+            #self.epsilon = tf.placeholder(tf.float32, [None], name='epsilon')
+
             self.g_dist = cosine_sim(self.latent_states, self.gt, 1)
 
             # intrinsic reward for worker NOTE: unsure if this cos similarity is correct, got it from SO
@@ -499,17 +507,15 @@ should be computed.
             grads_w, _ = tf.clip_by_global_norm(grads_w, 40.0)
 
             # TODO: logging/summaries
-            tf.summary.scalar("model/log_prob_tf", tf.reduce_sum(log_prob_tf))
+            #tf.summary.scalar("model/epsilon", tf.reduce_sum(self.epsilon))
             tf.summary.scalar("model/reward", tf.reduce_sum(self.r))
             tf.summary.scalar("model/v_w", tf.reduce_sum(self.v_w))
             tf.summary.scalar("model/adv_m", tf.reduce_sum(self.adv_m))
             tf.summary.scalar("model/adv_w", tf.reduce_sum(self.adv_w))
-            tf.summary.scalar("model/r", tf.reduce_sum(self.r))
             tf.summary.scalar("model/r_intrins", tf.reduce_sum(self.r_intrinsic))
             tf.summary.scalar("model/g_dist", tf.reduce_sum(self.g_dist))
             tf.summary.scalar("model/s_diff", tf.reduce_sum(self.s_diff))
             tf.summary.scalar("model/g_hist", tf.reduce_sum(self.g_hist))
-            tf.summary.scalar("model/cos_sim", tf.reduce_sum(cos_similarity))
             tf.summary.scalar("model/policy_loss", pi_loss / bs)
             tf.summary.scalar("model/worker_value_loss", v_loss_w / bs)
             tf.summary.scalar("model/manager_value_loss", v_loss_m / bs)
@@ -658,6 +664,8 @@ process grabs a rollout that's been produced by the thread runner,
 and updates the parameters.  The update is then sent to the parameter
 server.
 """
+        global EPSILON
+
         #print("hello from process")
         #sys.stdout.flush()
 
@@ -668,6 +676,7 @@ server.
         
         rollout = self.pull_batch_from_queue()
         batch = process_rollout(rollout, gamma=0.99, lambda_=1.0)
+        if batch == -1: return
         #print("features_w_c", batch.features_w[0])
         #print(batch.features_w[0])
         #print("features_w_h", batch.features_w[1])
@@ -694,6 +703,7 @@ server.
                 self.g_hist: batch.g_hist,
                 self.latent_states: batch.latent_states,
                 self.s_diff: batch.s_diff,
+                #self.epsilon: EPSILON*batch.s_diff.shape[0],
                 self.local_network.m_state_in[0]: batch.features_m[0],
                 self.local_network.m_state_in[1]: batch.features_m[1],
                 self.local_network.w_state_in[0]: batch.features_w[0],
