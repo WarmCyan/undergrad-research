@@ -21,10 +21,12 @@ HORIZEN_C = 10
 INTRINSIC_INFLUENCE = .8 # NOTE: from the paper, somewhere between 0 and 1....
 
 
-EPSILON_orig = .2
-EPSILON = .2
+EPSILON_orig = .3
+EPSILON = .3
+EPSILON_FINAL = .05
 ANNEAL_STEPS = 10000000 
-EPSILON_STEP = (EPSILON / 2) / ANNEAL_STEPS
+#EPSILON_STEP = (EPSILON / 2) / ANNEAL_STEPS
+EPSILON_STEP = (EPSILON_orig - EPSILON_FINAL) / ANNEAL_STEPS
 
 
 def discount(x, gamma):
@@ -264,6 +266,7 @@ def env_runner(env, policy, num_local_steps, summary_writer, render, renderOnly)
     global EPSILON
     global EPSILON_orig
     global EPSILON_STEP
+    global EPSILON_FINAL
     """
 The logic of the thread runner.  In brief, it constantly keeps on running
 the policy, and as long as the rollout exceeds a certain length, the thread
@@ -362,12 +365,16 @@ runner appends the policy to the queue.
                     #print("RANDOM ACTION")
                     action = np.array([0.0] * env.action_space.n)
                     action[env.action_space.sample()] = 1.0
-                    if EPSILON > EPSILON_orig / 2: EPSILON -= EPSILON_STEP
+                    if EPSILON > EPSILON_FINAL: EPSILON -= EPSILON_STEP
                 
                 # argmax to convert from one-hot
                 state, reward, terminal, info = env.step(action.argmax())
                 if render:
                     env.render()
+
+                # NOTE: reward clipping
+                if (reward > 1.0): reward = 1.0
+                if (reward < -1.0): reward = -1.0
 
                 #print("last fetched w:", features_w[0])
                 if True in np.isnan(features_w):
@@ -484,7 +491,7 @@ should be computed.
             manager_loss = .5 * v_loss_m + gt_loss
             
 
-            grads_m = tf.gradients(manager_loss, pi.var_list_m, stop_gradients=pi.var_list_w) # TODO: var list!!!!
+            grads_m = tf.gradients(manager_loss, pi.var_list_m, stop_gradients=pi.var_list_w_only) # TODO: var list!!!!
             grads_m, _ = tf.clip_by_global_norm(grads_m, 40.0)
 
             
@@ -503,7 +510,7 @@ should be computed.
             print(tf.shape(pi.x))
             worker_loss = .5 * v_loss_w + pi_loss
 
-            grads_w = tf.gradients(worker_loss, pi.var_list_w, stop_gradients=pi.var_list_m)  # TODO: var list!!!
+            grads_w = tf.gradients(worker_loss, pi.var_list_w, stop_gradients=pi.var_list_m_only)  # TODO: var list!!!
             grads_w, _ = tf.clip_by_global_norm(grads_w, 40.0)
 
             # TODO: logging/summaries
