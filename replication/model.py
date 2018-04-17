@@ -301,7 +301,8 @@ class FuNPolicy(object):
 
         #self.var_list_m = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "_m")
         print("scope name:", scope_name)
-        self.var_list_m = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "/" + scope_name + "_m")
+        #self.var_list_m = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "/" + scope_name + "_m")
+        self.var_list_m = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "/" + scope_name + "_m")
 
         # WORKER NETWORK
         with tf.variable_scope(scope_name + "_w"):
@@ -372,8 +373,14 @@ class FuNPolicy(object):
             self.sample = categorical_sample(self.logits, ac_space)[0, :]
             
         self.var_list_w = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name) + tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "/" + scope_name + "_w")
+
+        # remove vars from eachothers lists
         for item in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "/" + scope_name + "_m"):
-            self.var_list_w.remove(item)
+            try: self.var_list_w.remove(item)
+            except: pass
+        for item in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope_name + "/" + scope_name + "_w"):
+            try: self.var_list_m.remove(item)
+            except: pass
         
     def get_initial_features(self):
         return self.w_state_init[0], self.w_state_init[1], self.m_state_init[0], self.m_state_init[1]

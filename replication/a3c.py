@@ -18,7 +18,7 @@ LEARNING_RATE = 1e-4
 ALPHA = .99
 LOCAL_STEPS = 40
 HORIZEN_C = 10
-INTRINSIC_INFLUENCE = .5 # NOTE: from the paper, somewhere between 0 and 1....
+INTRINSIC_INFLUENCE = .8 # NOTE: from the paper, somewhere between 0 and 1....
 
 
 EPSILON_orig = .2
@@ -36,8 +36,8 @@ def cosine_sim(x1, x2,  axis, name='Cosine_loss'):
     with tf.name_scope(name):
         if axis == 2:
             # TODO: TODO: TODO: TODO: TODO: TODO: TODO: is setting axis to 1 even valid? Pretty sure it should still be 2?
-            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1, [0, 2, 1])),axis=1)) # NOTE: axis used to be axix (2, rather than 1)
-            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2, [0, 2, 1])),axis=1)) 
+            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1, [0, 2, 1])),axis=2)) # NOTE: axis used to be axix (2, rather than 1)
+            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2, [0, 2, 1])),axis=2)) 
         else:
             x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=axis))
             x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=axis))
@@ -109,8 +109,8 @@ given a rollout, compute its returns and the advantage
         #goal_hist_stack.append(np.vstack((np.zeros((1,3)), goal_hist_stack[-1][:-1])))
 
         # TODO: below line is breaking? "all input array dimensions except for concatenation axis must be exactly equal 
-        print(goal_hist_stack[-1])
-        print(goal_hist_stack[-1][:-1].shape)
+        #print(goal_hist_stack[-1])
+        #print(goal_hist_stack[-1][:-1].shape)
         goal_hist_stack.append(np.vstack((np.zeros((1,256)), goal_hist_stack[-1][:-1])))
     goal_hist = np.flip(np.rot90(np.dstack(goal_hist_stack), 3, (1,2)), axis=2)[:,1:]
 
