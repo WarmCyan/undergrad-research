@@ -310,15 +310,19 @@ runner appends the policy to the queue.
                 
                 state, reward, terminal, info = env.step(action.argmax())
                 
-                    
                 print("Rendering!")
                 sys.stdout.flush()
                 env.render()
 
+                # NOTE: reward clipping
+                actual_score = reward
+                if (reward > 1.0): reward = 1.0
+                if (reward < -1.0): reward = -1.0
+                
                 # collect the experience
                 rollout.add(last_state, latent_state, action, reward, value_w, value_m, terminal, features_w, features_m, goals)
                 length += 1
-                rewards += reward
+                rewards += actual_score
 
                 last_state = state
                 last_features = [features_w[0], features_w[1], features_m[0], features_m[1]]
@@ -373,6 +377,7 @@ runner appends the policy to the queue.
                     env.render()
 
                 # NOTE: reward clipping
+                actual_score = reward
                 if (reward > 1.0): reward = 1.0
                 if (reward < -1.0): reward = -1.0
 
@@ -386,7 +391,7 @@ runner appends the policy to the queue.
                 # collect the experience
                 rollout.add(last_state, latent_state, action, reward, value_w, value_m, terminal, features_w, features_m, goals)
                 length += 1
-                rewards += reward
+                rewards += actual_score
 
                 last_state = state
                 last_features = [features_w[0], features_w[1], features_m[0], features_m[1]]
@@ -441,7 +446,6 @@ should be computed.
             with tf.variable_scope("local"):
                 self.local_network = pi = FuNPolicy(env.observation_space.shape, env.action_space.n, LOCAL_STEPS, HORIZEN_C)
                 pi.global_step = self.global_step
-
 
             self.r = tf.placeholder(tf.float32, [None], name='r') # NOTE: same for both manager and worker, but worker has the additional intrinsic reward # TODO: which has to be calculated here!!!
             
