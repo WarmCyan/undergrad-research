@@ -201,16 +201,18 @@ class FuNPolicy(object):
         #for i in range(4):
             #x = tf.nn.elu(conv2d(x, 32, "l{}".format(i + 1), [3,3], [2,2]))
 
-        x = tf.nn.relu(conv2d(x, 16, "conv1", [8,8], [4,4]))
-        x = tf.nn.relu(conv2d(x, 32, "conv2", [4,4], [2,2]))
+
+        x = tf.nn.elu(conv2d(x, 16, "1", [8,8], [4,4]))
+        x = tf.nn.elu(conv2d(x, 32, "2", [4,4], [2,2]))
 
         
 
-        #print("x:")
-        #print(x.shape)
+        print("x:")
+        print(x.shape)
         #x = tf.expand_dims(flatten(x), [0])            
         #self.z = tf.reshape(x, [-1, 256])
-        self.z = tf.reshape(x, [-1, 288])
+        #self.z = tf.reshape(x, [-1, 288]) # NOTE: use for old cnn (for i in range 4)
+        self.z = tf.reshape(x, [-1, 1152]) # NOTE: use for FuN arch cnn (only 2 CNN layers)
         #print("z:")
         #print(self.z.shape)
 
@@ -225,7 +227,9 @@ class FuNPolicy(object):
 
             #self.s = tf.nn.elu(linear(self.z, EMBEDDING_DIMENSIONALITY, "mspace", normalized_columns_initializer(0.01))) # TODO: almost positive this is incorrect, supposed to be size?
             self.s = tf.nn.elu(linear(self.z, size, "mspace", normalized_columns_initializer(0.01))) 
+            print("before", self.s.shape)
             self.s_expanded = tf.expand_dims(self.s, 2) # NOTE: this used to be 0, not 2
+            print("after", self.s_expanded.shape)
 
             
             # dilated lstm
@@ -299,6 +303,7 @@ class FuNPolicy(object):
             #self.w = tf.matmul(tf.stop_gradient(self.pooled_goals), self.phi_w)
             self.w = tf.matmul(self.pooled_goals, self.phi_w)
             self.w = tf.expand_dims(self.w, 2)
+            print("W SHAPE:", self.w.shape)
 
 
 
