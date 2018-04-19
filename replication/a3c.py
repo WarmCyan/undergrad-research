@@ -63,19 +63,22 @@ def cosine_sim(x1, x2,  axis, name='Cosine_loss'):
 # https://stackoverflow.com/questions/38061080/how-to-transform-vector-into-unit-vector-in-tensorflow
 def cosine_sim_deep(x1, x2):
     with tf.name_scope('Cosine_loss_deep'):
-        x2 = x2 + .000001
         x1_val = tf.norm(x1, axis=2)
         x2_val = tf.norm(x2, axis=2)
 
         denom = x1_val * x2_val
-        #num = tf.reduce_sum(tf.multiply(x1,x2),axis=2)
+        num = tf.reduce_sum(tf.multiply(x1,x2),axis=2)
         #num = tf.reduce_sum(tf.multiply(x1,tf.transpose(x2, [0,2,1])),axis=2)
-        num = tf.tensordot(x1, x2, axes=2)
+        #num = tf.tensordot(x1, x2, axes=2)
 
         
         #return tf.div(num, denom)
         #return tf.Print(tf.div(num,denom), [x1_val, x2_val], message="cosine_sim returns:", summarize=256)
-        return tf.Print(tf.div(num,denom), [num, denom], message="cosine_sim returns:", summarize=256)
+        result = tf.div(num, denom)
+        result = tf.where(tf.is_nan(result), tf.zeros_like(result), result) # TODO: is this just hiding the mess or a valid way of dealing with zero vectors??
+        #return tf.Print(result, [result, num, denom], message="cosine_sim returns:", summarize=256)
+        return result
+    
         #return tf.Print(tf.div(num,denom), [x1, x2], message="cosine_sim returns:", summarize=256)
         
     

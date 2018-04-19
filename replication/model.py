@@ -198,8 +198,11 @@ class FuNPolicy(object):
         #print(ob_space)
         self.x = x = tf.placeholder(tf.float32, [None] + list(ob_space))
 
-        for i in range(4):
-            x = tf.nn.elu(conv2d(x, 32, "l{}".format(i + 1), [3,3], [2,2]))
+        #for i in range(4):
+            #x = tf.nn.elu(conv2d(x, 32, "l{}".format(i + 1), [3,3], [2,2]))
+
+        x = tf.nn.relu(conv2d(x, 16, "conv1", [8,8], [4,4]))
+        x = tf.nn.relu(conv2d(x, 32, "conv2", [4,4], [2,2]))
 
         
 
