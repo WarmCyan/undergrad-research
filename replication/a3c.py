@@ -29,6 +29,10 @@ ANNEAL_STEPS = 10000000
 EPSILON_STEP = (EPSILON_orig - EPSILON_FINAL) / ANNEAL_STEPS
 
 
+WORKER_DISCOUNT = .95
+MANAGER_DISCOUNT = .99
+
+
 def discount(x, gamma):
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
 
@@ -56,7 +60,27 @@ def cosine_sim(x1, x2,  axis, name='Cosine_loss'):
     # TODO: verify this (probably axis is actually 2, not 1)
     
 
-def process_rollout(rollout, gamma, lambda_=1.0):
+# https://stackoverflow.com/questions/38061080/how-to-transform-vector-into-unit-vector-in-tensorflow
+def cosine_sim_deep(x1, x2):
+    with tf.name_scope('Cosine_loss_deep'):
+        x2 = x2 + .000001
+        x1_val = tf.norm(x1, axis=2)
+        x2_val = tf.norm(x2, axis=2)
+
+        denom = x1_val * x2_val
+        #num = tf.reduce_sum(tf.multiply(x1,x2),axis=2)
+        #num = tf.reduce_sum(tf.multiply(x1,tf.transpose(x2, [0,2,1])),axis=2)
+        num = tf.tensordot(x1, x2, axes=2)
+
+        
+        #return tf.div(num, denom)
+        #return tf.Print(tf.div(num,denom), [x1_val, x2_val], message="cosine_sim returns:", summarize=256)
+        return tf.Print(tf.div(num,denom), [num, denom], message="cosine_sim returns:", summarize=256)
+        #return tf.Print(tf.div(num,denom), [x1, x2], message="cosine_sim returns:", summarize=256)
+        
+    
+
+def process_rollout(rollout, sess, gamma, lambda_=1.0):
     """
 given a rollout, compute its returns and the advantage
 """
@@ -87,10 +111,11 @@ given a rollout, compute its returns and the advantage
     #print(pred_v_w)
 
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])
+    #batch_reward = discount(rewards_plus_v, gamma)[:-1] # NOTE: target_v, right?
     batch_reward = discount(rewards_plus_v, gamma)[:-1] # NOTE: target_v, right?
 
-    delta_t_m = rewards + gamma*pred_v_m[1:] - pred_v_m[:-1]
-    batch_adv_m = discount(delta_t_m, gamma*lambda_)
+    delta_t_m = rewards + MANAGER_DISCOUNT*pred_v_m[1:] - pred_v_m[:-1]
+    batch_adv_m = discount(delta_t_m, MANAGER_DISCOUNT)
 
 
     # TODO: don't know if this is right, but it has one too many values
@@ -113,14 +138,16 @@ given a rollout, compute its returns and the advantage
         # TODO: below line is breaking? "all input array dimensions except for concatenation axis must be exactly equal 
         #print(goal_hist_stack[-1])
         #print(goal_hist_stack[-1][:-1].shape)
-        goal_hist_stack.append(np.vstack((np.zeros((1,256)), goal_hist_stack[-1][:-1])))
+        #goal_hist_stack.append(np.vstack((np.zeros((1,256)), goal_hist_stack[-1][:-1]))) # TODO: old
+        goal_hist_stack.append(np.vstack((rollout.old_goals[HORIZEN_C - 1 - i], goal_hist_stack[-1][:-1])))
     goal_hist = np.flip(np.rot90(np.dstack(goal_hist_stack), 3, (1,2)), axis=2)[:,1:]
 
     # TODO: calculate horizen state differnecs # NOTE: this is still probably super slow
     lstate_hist_stack = [latent_states]
     #print("Latent state size:",latent_states.shape)
     for i in range(HORIZEN_C):
-        lstate_hist_stack.append(np.vstack((np.zeros((1,256)), lstate_hist_stack[-1][:-1])))
+        #lstate_hist_stack.append(np.vstack((np.zeros((1,256)), lstate_hist_stack[-1][:-1])))
+        lstate_hist_stack.append(np.vstack((rollout.old_latent_states[HORIZEN_C - 1 - i], lstate_hist_stack[-1][:-1])))
     lstate_hist = np.flip(np.rot90(np.dstack(lstate_hist_stack), 3, (1,2)), axis=2)[:,1:]
     latent_states_sub = np.rot90(np.repeat(latent_states[:,:,np.newaxis], HORIZEN_C, axis=2), 1, (1,2)) 
     state_diffs = latent_states_sub - lstate_hist
@@ -147,6 +174,13 @@ given a rollout, compute its returns and the advantage
     #print("hist shape:", goal_hist.shape)
     #print("state diffs shape:", state_diffs.shape)
     #print("adv_m shape:", batch_adv_m.shape)
+
+
+    # get intrinsic reward and calculate worker advantage
+    #sess.run(self.r_intrinsic, feed_dict={
+        #gt: goals
+
+    
 
     return Batch(batch_states, batch_actions, batch_reward, batch_adv_m, pred_v_w, goals, goal_hist, state_diffs, latent_states, rollout.terminal, features_w, features_m)
 
@@ -197,6 +231,8 @@ once it has processed enough steps.
         self.features_w = [] 
         self.features_m = [] 
         self.goals = []
+        self.old_latent_states = []
+        self.old_goals = []
 
     def add(self, state, m_state, action, reward, value_w, value_m, terminal, features_w, features_m, goals):
         self.states += [state]
@@ -278,6 +314,7 @@ runner appends the policy to the queue.
     length = 0
     rewards = 0
 
+    renderOnly = False
     if renderOnly:
         sys.stdout = open('out.txt', 'a')
         print("BEGINNING LOG OF RENDER ONLY")
@@ -357,6 +394,9 @@ runner appends the policy to the queue.
             terminal_end = False
             rollout = PartialRollout()
 
+            old_latent_states = np.zeros((HORIZEN_C, 256)) # history to pass in
+            old_goals = np.zeros((HORIZEN_C, 256)) # history to pass in
+
 
             for _ in range(num_local_steps):
                 #print("going in w:", last_features[0])
@@ -412,14 +452,22 @@ runner appends the policy to the queue.
                     print("Episode finished. Sum of rewards: %d. Length: %d" % (rewards, length))
                     length = 0
                     rewards = 0
+                    old_latent_states = np.zeros((HORIZEN_C, 256)) # history to pass in
+                    old_goals = np.zeros((HORIZEN_C, 256)) # history to pass in
                     break
 
             if not terminal_end:
                 rollout.r = policy.value(last_state, *last_features)
 
+            # add in the history
+            rollout.old_latent_states = old_latent_states
+            rollout.old_goals = old_goals
+
             # once we have enough experience, yield it, and have the ThreadRunner place it on a queue
             counter += 1
             yield rollout
+
+            old_latent_states = rollout.m_states[-10:]
 
 class A3C(object):
     def __init__(self, env, task, visualise, renderOnly=False):
@@ -456,12 +504,28 @@ should be computed.
 
             # NOTE: yes, getting manager advantage passed in
             self.adv_m = tf.placeholder(tf.float32, [None], name='adv_m')
-            self.gt = tf.placeholder(tf.float32, [None, 256], name='gt') 
+
+
+
+
+
+            # CALCULATING INTRINSIC REWARD
+            # ------------------------------------------------
 
             # TODO: wait, shouldn't these be HORIZEN_C, 256?
             self.g_hist = tf.placeholder(tf.float32, [None, HORIZEN_C, 256], name='g_hist') # TODO: calc in process_rollout
             self.s_diff = tf.placeholder(tf.float32, [None, HORIZEN_C, 256], name='s_diff') # TODO:: calc in process_rollout
+            
+            #cos_similarity = cosine_sim(self.s_diff, self.g_hist, 2)
+            cos_similarity = cosine_sim_deep(self.s_diff, self.g_hist)
+            
+            self.r_intrinsic = tf.reduce_sum(cos_similarity) / HORIZEN_C
 
+            # ------------------------------------------------
+
+
+
+            self.gt = tf.placeholder(tf.float32, [None, 256], name='gt') 
 
             #self.g_dist = tf.placeholder(tf.float32, [None], name='g_dist') # TODO: calc in process_rollout (should just be a single cosine similarity calculation)
             self.latent_states = tf.placeholder(tf.float32, [None, 256], name='latent_states')
@@ -478,13 +542,11 @@ should be computed.
             #normalize_b = tf.nn.l2_normalize(g_hist,0)
             #cos_similarity = tf.reduce_sum(tf.multiply(normalize_a,normalize_b))
             
-            cos_similarity = cosine_sim(self.s_diff, self.g_hist, 2)
-            
-            
-            self.r_intrinsic = tf.reduce_sum(cos_similarity) / HORIZEN_C
+
 
             # advantage for worker
-            self.adv_w = self.r + INTRINSIC_INFLUENCE*self.r_intrinsic + self.v_w # [None] (scalar result)
+            #self.adv_w = self.r + INTRINSIC_INFLUENCE*self.r_intrinsic + self.v_w # [None] (scalar result)
+            self.adv_w = tf.placeholder(tf.float32, [None], name='adv_w')
 
 
             # TODO: gradients for g_t
@@ -686,15 +748,29 @@ server.
         sys.stdout.flush()
         
         rollout = self.pull_batch_from_queue()
-        batch = process_rollout(rollout, gamma=0.99, lambda_=1.0)
+        batch = process_rollout(rollout, sess, gamma=0.99, lambda_=1.0)
         if batch == -1: return
+
+        # get intrinsic rewards
+        intrinsic_reward = sess.run(self.r_intrinsic, feed_dict={
+            self.g_hist: batch.g_hist,
+            self.s_diff: batch.s_diff})
+            #self.gt: batch.gt,
+            #self.latent_states: batch.latent_states})
+
+
+        # calculate worker advantage
+        pred_v_w =np.asarray(rollout.values_w + [rollout.r])
+        delta_t_w_intrins = np.asarray(rollout.rewards) + INTRINSIC_INFLUENCE*intrinsic_reward + WORKER_DISCOUNT*pred_v_w[1:] - pred_v_w[:-1]
+        batch_adv_w = discount(delta_t_w_intrins, WORKER_DISCOUNT)
+        
         #print("features_w_c", batch.features_w[0])
         #print(batch.features_w[0])
         #print("features_w_h", batch.features_w[1])
         #print(batch.features_w[1])
 
         # TODO: TODO: TODO: TODO: don't compute summaries every time!
-        should_compute_summary = self.task == 0 and self.local_steps % 11 == 0
+        should_compute_summary = self.task == 0 and self.local_steps % 12 == 0
         #should_compute_summary = True
 
         if should_compute_summary:
@@ -710,6 +786,7 @@ server.
                 self.ac: batch.ac,
                 self.v_w: batch.v_w,
                 self.adv_m: batch.adv_m,
+                self.adv_w: batch_adv_w,
                 self.gt: batch.gt,
                 self.g_hist: batch.g_hist,
                 self.latent_states: batch.latent_states,
