@@ -38,26 +38,37 @@ def discount(x, gamma):
 
 # https://gist.github.com/ranarag/77014b952a649dbaf8f47969affdd3bc
 #def cosine_sim(x1, x2,name = 'Cosine_loss'): # axis is 1 by default
-def cosine_sim(x1, x2,  axis, name='Cosine_loss'):
-    with tf.name_scope(name):
-        if axis == 2:
-            # TODO: TODO: TODO: TODO: TODO: TODO: TODO: is setting axis to 1 even valid? Pretty sure it should still be 2?
-            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1, [0, 2, 1])),axis=2)) # NOTE: axis used to be axix (2, rather than 1)
-            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2, [0, 2, 1])),axis=2)) 
-        else:
-            x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=axis))
-            x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=axis))
-        # NOTE: remove pesky nan's....?
-        x1_val = tf.where(tf.is_nan(x1_val), tf.zeros_like(x1_val), x1_val)
-        x2_val = tf.where(tf.is_nan(x2_val), tf.zeros_like(x2_val), x2_val)
-        denom =  tf.multiply(x1_val,x2_val) + .00001 # NOTE: adding to avoid division by 0
-        #print(denom.shape)
-        num = tf.reduce_sum(tf.multiply(x1,x2),axis=axis)
-        #print(num.shape)
-        #return tf.Print(tf.div(num,denom), [num, denom, x1_val, x2_val], message="cosine_sim returns:", summarize=256)
-        return tf.div(num,denom)
-
+#def cosine_sim(x1, x2,  axis, name='Cosine_loss'):
+    #with tf.name_scope(name):
+        #if axis == 2:
+            ## TODO: TODO: TODO: TODO: TODO: TODO: TODO: is setting axis to 1 even valid? Pretty sure it should still be 2?
+            #x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1, [0, 2, 1])),axis=2)) # NOTE: axis used to be axix (2, rather than 1)
+            #x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2, [0, 2, 1])),axis=2)) 
+        #else:
+            #x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=axis))
+            #x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=axis))
+        ## NOTE: remove pesky nan's....?
+        #x1_val = tf.where(tf.is_nan(x1_val), tf.zeros_like(x1_val), x1_val)
+        #x2_val = tf.where(tf.is_nan(x2_val), tf.zeros_like(x2_val), x2_val)
+        #denom =  tf.multiply(x1_val,x2_val) + .00001 # NOTE: adding to avoid division by 0
+        ##print(denom.shape)
+        #num = tf.reduce_sum(tf.multiply(x1,x2),axis=axis)
+        ##print(num.shape)
+        ##return tf.Print(tf.div(num,denom), [num, denom, x1_val, x2_val], message="cosine_sim returns:", summarize=256)
+        #return tf.div(num,denom)
+#
     # TODO: verify this (probably axis is actually 2, not 1)
+
+# https://gist.github.com/ranarag/77014b952a649dbaf8f47969affdd3bc
+def cosine_sim(x1, x2,name = 'Cosine_loss'):
+    with tf.name_scope(name):
+        x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=1))
+        x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=1))
+        denom =  tf.multiply(x1_val,x2_val)
+        print denom.shape
+        num = tf.reduce_sum(tf.multiply(x1,x2),axis=1)
+        print num.shape
+        return tf.div(num,denom)
     
 
 # https://stackoverflow.com/questions/38061080/how-to-transform-vector-into-unit-vector-in-tensorflow
