@@ -60,15 +60,15 @@ def discount(x, gamma):
     # TODO: verify this (probably axis is actually 2, not 1)
 
 # https://gist.github.com/ranarag/77014b952a649dbaf8f47969affdd3bc
-def cosine_sim(x1, x2,name = 'Cosine_loss'):
+def cosine_sim(x1, x2, axis, name="Cosine_loss"):
     with tf.name_scope(name):
         x1_val = tf.sqrt(tf.reduce_sum(tf.matmul(x1,tf.transpose(x1)),axis=1))
         x2_val = tf.sqrt(tf.reduce_sum(tf.matmul(x2,tf.transpose(x2)),axis=1))
         denom =  tf.multiply(x1_val,x2_val)
-        print denom.shape
         num = tf.reduce_sum(tf.multiply(x1,x2),axis=1)
-        print num.shape
-        return tf.div(num,denom)
+        result = tf.div(num, denom)
+        result = tf.where(tf.is_nan(result), tf.zeros_like(result), result)
+        return result
     
 
 # https://stackoverflow.com/questions/38061080/how-to-transform-vector-into-unit-vector-in-tensorflow
