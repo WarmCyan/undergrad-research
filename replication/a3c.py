@@ -588,7 +588,10 @@ should be computed.
             # TODO: do I still use entropy? I assume no?
             bs = tf.to_float(tf.shape(pi.x)[0])
             print(tf.shape(pi.x))
-            worker_loss = .5 * v_loss_w + pi_loss
+
+            entropy = - tf.reduce_sum(prob_tf * log_prob_tf)
+            
+            worker_loss = .5 * v_loss_w + pi_loss - entropy*.01
 
             grads_w = tf.gradients(worker_loss, pi.var_list_w, stop_gradients=pi.var_list_m_only)  # TODO: var list!!!
             grads_w, _ = tf.clip_by_global_norm(grads_w, 40.0)
@@ -596,7 +599,6 @@ should be computed.
             # TODO: logging/summaries
             #tf.summary.scalar("model/epsilon", tf.reduce_sum(self.epsilon))
             tf.summary.scalar("model/reward", tf.reduce_sum(self.r))
-            tf.summary.scalar("model/v_w", tf.reduce_sum(self.v_w))
             tf.summary.scalar("model/adv_m", tf.reduce_sum(self.adv_m))
             tf.summary.scalar("model/adv_w", tf.reduce_sum(self.adv_w))
             tf.summary.scalar("model/r_intrins", tf.reduce_sum(self.r_intrinsic))
@@ -606,6 +608,9 @@ should be computed.
             tf.summary.scalar("model/policy_loss", pi_loss / bs)
             tf.summary.scalar("model/worker_value_loss", v_loss_w / bs)
             tf.summary.scalar("model/manager_value_loss", v_loss_m / bs)
+            tf.summary.scalar("model/manager_loss", manager_loss / bs)
+            tf.summary.scalar("model/worker_loss", worker_loss / bs)
+            tf.summary.scalar("model/entropy", entropy / bs)
             #tf.summary.scalar("model/entropy", entropy / bs)
             tf.summary.image("model/state", pi.x)
             #tf.summary.scalar("model/grad_global_norm", tf.global_norm(grads))
